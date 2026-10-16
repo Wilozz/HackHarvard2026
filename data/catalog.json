@@ -1,0 +1,64 @@
+{
+  "hotels": [
+    {
+      "id": "mtl-plateau",
+      "name": "Plateau Lofts (demo)",
+      "city": "Montreal",
+      "region": "QC, Canada",
+      "nightlyRateUsd": 165,
+      "roomCapacity": 2,
+      "phone": "DEMO",
+      "highlights": ["walkable to Mont-Royal bars and bagel shops", "late check-in desk", "two queen beds per room"]
+    },
+    {
+      "id": "mtl-oldport",
+      "name": "Old Port Inn (demo)",
+      "city": "Montreal",
+      "region": "QC, Canada",
+      "nightlyRateUsd": 229,
+      "roomCapacity": 2,
+      "phone": "DEMO",
+      "highlights": ["historic district", "breakfast included with vegetarian options", "group rates for 2+ rooms"]
+    },
+    {
+      "id": "mtl-hostel",
+      "name": "Saint-Laurent Hostel (demo)",
+      "city": "Montreal",
+      "region": "QC, Canada",
+      "nightlyRateUsd": 120,
+      "roomCapacity": 4,
+      "phone": "DEMO",
+      "highlights": ["private 4-bed rooms", "on the main nightlife strip", "cheapest option"]
+    },
+    {
+      "id": "stowe-lodge",
+      "name": "Mansfield Ski Lodge (demo)",
+      "city": "Stowe",
+      "region": "VT, USA",
+      "nightlyRateUsd": 210,
+      "roomCapacity": 2,
+      "phone": "DEMO",
+      "highlights": ["shuttle to the ski lifts", "hot tub", "free parking"]
+    },
+    {
+      "id": "stowe-cabin",
+      "name": "Notch Road Cabins (demo)",
+      "city": "Stowe",
+      "region": "VT, USA",
+      "nightlyRateUsd": 340,
+      "roomCapacity": 4,
+      "phone": "DEMO",
+      "highlights": ["whole cabin sleeps 4", "kitchen for group dinners", "10 minutes to the slopes"]
+    },
+    {
+      "id": "burlington-inn",
+      "name": "Lakeside Burlington Inn (demo)",
+      "city": "Burlington",
+      "region": "VT, USA",
+      "nightlyRateUsd": 150,
+      "roomCapacity": 2,
+      "phone": "DEMO",
+      "highlights": ["walk to Church Street", "45 minutes to ski areas", "budget friendly"]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "description": "A messy day of trip talk for the demo group chat. Times are UTC. Hetarth changes their dates halfway through; the latest message should win.",
+  "messages": [
+    { "at": "2026-10-15T00:05:00Z", "from": "Harsh", "text": "ok we HAVE to do a winter trip this year, last year we talked about it for 2 months and went nowhere" },
+    { "at": "2026-10-15T00:06:30Z", "from": "Matias", "text": "fr. I'm down for anything in december" },
+    { "at": "2026-10-15T00:07:10Z", "from": "wiloz", "text": "same but I'm broke after this semester lol" },
+    { "at": "2026-10-15T00:08:00Z", "from": "Hetarth", "text": "where are we thinking" },
+    { "at": "2026-10-15T00:09:40Z", "from": "Harsh", "text": "Montreal? or somewhere in Vermont so we can ski" },
+    { "at": "2026-10-15T00:10:15Z", "from": "Matias", "text": "Montreal would be sick, the bagels alone" },
+    { "at": "2026-10-15T00:11:02Z", "from": "wiloz", "text": "not Miami, my cousin went last december and said it was overpriced and packed" },
+    { "at": "2026-10-15T00:12:30Z", "from": "Hetarth", "text": "I want to ski at least one day. never been" },
+    { "at": "2026-10-15T00:13:05Z", "from": "Harsh", "text": "I have finals until the 18th so anything after that works for me" },
+    { "at": "2026-10-15T00:14:20Z", "from": "Matias", "text": "I fly home on the 23rd so I need to be back in Boston by the night of the 22nd" },
+    { "at": "2026-10-15T00:15:00Z", "from": "Hetarth", "text": "I'm only free the weekend of the 12th, family stuff after that" },
+    { "at": "2026-10-15T00:16:45Z", "from": "wiloz", "text": "the 12th doesn't work for Harsh tho" },
+    { "at": "2026-10-15T00:17:30Z", "from": "Harsh", "text": "yeah I literally have an exam on the 14th" },
+
+    { "at": "2026-10-15T14:02:00Z", "from": "wiloz", "text": "ok real talk budget. I can do like $300 max for the whole trip, not counting gas" },
+    { "at": "2026-10-15T14:03:30Z", "from": "Matias", "text": "I'm good up to $400" },
+    { "at": "2026-10-15T14:04:10Z", "from": "Harsh", "text": "$450 is fine for me" },
+    { "at": "2026-10-15T14:05:00Z", "from": "Hetarth", "text": "anything under $350 works" },
+    { "at": "2026-10-15T14:06:20Z", "from": "Harsh", "text": "hotel or airbnb? I'd rather not deal with an airbnb host again after last time" },
+    { "at": "2026-10-15T14:07:00Z", "from": "Matias", "text": "hotel is fine, I'm ok sharing a room" },
+    { "at": "2026-10-15T14:07:40Z", "from": "wiloz", "text": "sharing is fine just not a hostel dorm with strangers please" },
+    { "at": "2026-10-15T14:09:15Z", "from": "Harsh", "text": "also reminder I'm vegetarian so somewhere with actual food options lol" },
+    { "at": "2026-10-15T14:10:00Z", "from": "Hetarth", "text": "I can drive, my car fits 4 if we keep the bags small" },
+    { "at": "2026-10-15T14:11:30Z", "from": "Matias", "text": "Montreal is like 5 hours from Cambridge, doable" },
+
+    { "at": "2026-10-16T01:30:00Z", "from": "Hetarth", "text": "UPDATE: family thing got moved to January. I'm actually free the whole week of the 19th now, the 12th no longer works for me" },
+    { "at": "2026-10-16T01:31:10Z", "from": "Harsh", "text": "LETS GO so the 19th to the 22nd??" },
+    { "at": "2026-10-16T01:32:00Z", "from": "Matias", "text": "19-22 works if we're back the night of the 22nd" },
+    { "at": "2026-10-16T01:33:20Z", "from": "wiloz", "text": "I'm in. Montreal for the nightlife or Stowe for skiing, either is fine with me" },
+    { "at": "2026-10-16T01:34:00Z", "from": "Hetarth", "text": "if it's Montreal can we do a day trip to Mont Tremblant to ski?" },
+    { "at": "2026-10-16T01:35:45Z", "from": "Harsh", "text": "someone just book it before we lose momentum again 😭" }
+  ]
+}
