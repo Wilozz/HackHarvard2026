@@ -33,7 +33,7 @@ Rules for each option:
 - Dates are YYYY-MM-DD. check_out is the day everyone leaves. Every traveler must be available from check_in through the night before check_out. If no dates work for everyone, pick the dates that work for the most travelers and say who can't make it.
 - Keep the per-person cost within every traveler's cap. The app computes exact prices from the catalog rate, the number of nights, and the rooms needed, and drops any option over a cap, so don't do the math yourself, just stay comfortably inside the caps.
 - Make the options meaningfully different: a cheaper and a nicer pick, different cities, or different dates.
-- rationale: one or two short sentences for a group text that say who said what, by first name, e.g. "Dec 19-22 since Harsh is busy until the 18th. Plateau Lofts keeps it under Matias's $400 cap." Plain text, no markdown.
+- rationale: one or two short sentences for a group text that say who said what, by first name, e.g. "Dec 19-22 since Harsh is busy until the 18th. Plateau Lofts keeps it under Matias's $400 cap." Plain text, no markdown. You are not going on the trip, so never say "we" or "us"; say "you all" or use names.
 - sources: the [mN] refs of the messages your rationale relies on.`;
 
 export interface PlanResult {
