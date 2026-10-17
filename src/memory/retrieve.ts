@@ -1,8 +1,8 @@
 import { config } from "../config";
 import { getDb, toVector } from "../db";
-import { formatStamp, type StoredMessage } from "./chunker";
-import { embedQuery } from "./embed";
-import { loadHumanMessages } from "./ingest";
+import { formatStamp, transcriptLine, type StoredMessage } from "./chunker";
+import { embedQueries } from "./embed";
+import { loadHumanMessages, loadRecentMessages } from "./ingest";
 
 export interface TemplateQuestion {
   slot: string;
@@ -82,15 +82,14 @@ export interface RetrievedContext {
 const TOP_K = 5;
 const NEIGHBORS = 2;
 
-async function vectorSearch(chatId: string, query: string, k: number): Promise<ChunkHit[]> {
+async function vectorSearch(chatId: string, embedding: number[], k: number): Promise<ChunkHit[]> {
   const db = await getDb();
-  const vec = toVector(await embedQuery(query));
   const rows = await db.query<{ id: string | number; message_ids: string[]; score: number }>(
     `select id, message_ids, 1 - (embedding <=> $1::vector) as score
      from chunks where chat_id = $2
      order by embedding <=> $1::vector
      limit $3`,
-    [vec, chatId, k],
+    [toVector(embedding), chatId, k],
   );
   return rows.map((r) => ({ id: String(r.id), messageIds: r.message_ids, score: Number(r.score), via: "vector" }));
 }
@@ -128,27 +127,36 @@ async function chunkPreviews(ids: string[]): Promise<Map<string, string>> {
 
 /**
  * Run the template questions (plus the raw request) against this chat's
- * chunks, merge vector and keyword hits, widen each hit by its neighboring
- * messages, and return one chronological transcript. Sorting by time lets the
- * model treat the latest statement as the truth.
+ * chunks, merge vector and keyword hits, and widen each hit by its
+ * neighboring messages. Returns the matched messages oldest first, so the
+ * latest statement reads as the truth.
  */
-export async function retrieve(
+async function retrieveMessages(
   chatId: string,
   request: string,
-  template: TemplateQuestion[] = TRIP_TEMPLATE,
-): Promise<RetrievedContext> {
+  template: TemplateQuestion[],
+): Promise<{ messages: StoredMessage[]; debug: SlotDebug[] }> {
   const questions: TemplateQuestion[] = [
     ...template,
-    { slot: "request", question: request, keywords: requestKeywords(request) },
+    { slot: "request", question: request || "trip plans", keywords: requestKeywords(request) },
   ];
 
+  // One model call for every question, then all searches in parallel: each
+  // query is a network round trip when the database is Supabase.
+  const embeddings = await embedQueries(questions.map((q) => q.question));
+  const perQuestion = await Promise.all(
+    questions.map(async (q, i) => [
+      ...(await vectorSearch(chatId, embeddings[i]!, TOP_K)),
+      ...(await keywordSearch(chatId, q.keywords, TOP_K)),
+    ]),
+  );
+
   const hitsByChunk = new Map<string, ChunkHit>();
-  const debug: SlotDebug[] = [];
-  for (const q of questions) {
-    const hits = [...(await vectorSearch(chatId, q.question, TOP_K)), ...(await keywordSearch(chatId, q.keywords, TOP_K))];
-    debug.push({ slot: q.slot, question: q.question, hits: hits.map((h) => ({ chunkId: h.id, score: h.score, via: h.via, preview: "" })) });
+  const debug: SlotDebug[] = questions.map((q, i) => {
+    const hits = perQuestion[i]!;
     for (const h of hits) if (!hitsByChunk.has(h.id)) hitsByChunk.set(h.id, h);
-  }
+    return { slot: q.slot, question: q.question, hits: hits.map((h) => ({ chunkId: h.id, score: h.score, via: h.via, preview: "" })) };
+  });
 
   const previews = await chunkPreviews([...hitsByChunk.keys()]);
   for (const d of debug) for (const h of d.hits) h.preview = previews.get(h.chunkId) ?? "";
@@ -163,14 +171,56 @@ export async function retrieve(
       for (let j = Math.max(0, i - NEIGHBORS); j <= Math.min(all.length - 1, i + NEIGHBORS); j++) selected.add(j);
     }
   }
+  return { messages: [...selected].sort((a, b) => a - b).map((i) => all[i]!), debug };
+}
 
-  const picked: StoredMessage[] = [...selected].sort((a, b) => a - b).map((i) => all[i]!);
-  return toTranscript(picked, debug);
+/** Template retrieval with [mN] refs, for the planner. */
+export async function retrieve(
+  chatId: string,
+  request: string,
+  template: TemplateQuestion[] = TRIP_TEMPLATE,
+): Promise<RetrievedContext> {
+  const { messages, debug } = await retrieveMessages(chatId, request, template);
+  return toTranscript(messages, debug);
 }
 
 /** Retrieval for a free-form question: the question plus its keywords, no template. */
 export async function retrieveForQuestion(chatId: string, question: string): Promise<RetrievedContext> {
   return retrieve(chatId, question, []);
+}
+
+export interface ChatContext {
+  /** Transcript lines (`[Oct 16, 8:14 PM] Harsh: ...`), oldest first. */
+  transcript: string;
+  debug: SlotDebug[];
+  messageCount: number;
+}
+
+/**
+ * Context for answering a mention: the passages the trip template and the
+ * request retrieve from the whole history, plus the latest `recent` messages
+ * (the agent's own replies included) so the conversation in progress reads
+ * naturally. Merged and sorted by time, capped at `maxMessages` newest.
+ */
+export async function contextForRequest(
+  chatId: string,
+  request: string,
+  opts: { recent?: number; maxMessages?: number } = {},
+): Promise<ChatContext> {
+  const [{ messages: retrieved, debug }, recent] = await Promise.all([
+    retrieveMessages(chatId, request, TRIP_TEMPLATE),
+    loadRecentMessages(chatId, opts.recent ?? 20),
+  ]);
+  const byId = new Map<string, StoredMessage>();
+  for (const m of [...retrieved, ...recent]) byId.set(m.id, m);
+  const merged = [...byId.values()]
+    .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(-(opts.maxMessages ?? 300));
+  return {
+    transcript: merged.map((m) => transcriptLine(m, config.TRIP_TIMEZONE)).join("\n"),
+    debug,
+    messageCount: merged.length,
+  };
 }
 
 function toTranscript(messages: StoredMessage[], debug: SlotDebug[]): RetrievedContext {

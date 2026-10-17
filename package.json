@@ -14,7 +14,10 @@
     "test": "tsx --test test/*.test.ts",
     "seed:chat": "tsx scripts/seed-chat.ts",
     "seed:nessie": "tsx scripts/seed-nessie.ts",
-    "reset": "tsx scripts/reset.ts"
+    "reset": "tsx scripts/reset.ts",
+    "db:setup": "tsx scripts/db.ts setup",
+    "db:check": "tsx scripts/db.ts check",
+    "db:selftest": "tsx scripts/db.ts selftest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",

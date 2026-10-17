@@ -16,7 +16,7 @@ Context for the ROAM project (HackHarvard 2026). Written Fri Oct 16, 2026; updat
 ## In this repo
 
 - `src/photon/api.ts` is a small `fetch` client for the four endpoints we use (list messages, get message, send message, typing) plus the agent lookup. It retries 429s, 5xx and network errors with the same idempotency key.
-- `src/photon/agent.ts` is the iMessage loop. It polls `GET /messages?direction=received` every 2 seconds and ignores anything that arrived before it started. It answers group messages that mention `@Tripchat`, and every DM. For each one it re-reads the whole chat from Photon and asks Claude for a trip suggestion (`src/agent/suggest.ts`), then replies in the same Space (or the one `PHOTON_REPLY_SPACES` maps it to).
+- `src/photon/agent.ts` is the iMessage loop. On start it copies every project iMessage (`GET /messages`, both directions) into the memory database. Then it polls `GET /messages?direction=received` every 2 seconds, saves each new message, and never answers anything that arrived before it started. It answers group messages that mention `@Tripchat`, and every DM. For each one it retrieves the relevant passages plus the latest 20 messages from memory (Postgres/Supabase + pgvector), asks Claude for a trip suggestion (`src/agent/suggest.ts`), replies in the same Space (or the one `PHOTON_REPLY_SPACES` maps it to), and saves its reply. A Space and the Space it's redirected to share one memory chat (`imessage:<reply Space id>`). If the database is down it falls back to re-reading the whole chat from Photon.
 - `npm run dev` picks this path when `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` are set. Without them it runs the terminal chat (Spectrum, full plan/vote/book/split flow with RAG).
 
 ## Our setup

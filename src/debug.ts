@@ -1,7 +1,12 @@
 import { createServer } from "node:http";
-import type { TripAgent } from "./agent/handler";
 import { config } from "./config";
 import { log } from "./log";
+import type { SlotDebug } from "./memory/retrieve";
+
+/** Anything that tracks the latest retrieval per chat: the terminal TripAgent or the Photon agent. */
+export interface RetrievalSource {
+  readonly recent: ReadonlyMap<string, { chatId: string; phase: string; lastRetrieval?: SlotDebug[] }>;
+}
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -10,7 +15,7 @@ const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)}
  * template question pulled for the latest plan. Bound to 127.0.0.1 because it
  * shows message text.
  */
-export function startDebugServer(agent: TripAgent): void {
+export function startDebugServer(agent: RetrievalSource): void {
   if (config.DEBUG_PORT === 0) return;
   const server = createServer((req, res) => {
     if (req.url !== "/") {
