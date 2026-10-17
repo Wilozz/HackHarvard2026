@@ -27,6 +27,8 @@ export interface PhotonContent {
   type: string;
   format?: string;
   text?: string;
+  /** On attachment content. */
+  attachmentId?: string;
   parts?: PhotonContent[];
 }
 
@@ -75,6 +77,8 @@ export interface PhotonApi {
   createSpace(participantIds: string[]): Promise<PhotonSpace>;
   sendText(args: SendTextArgs): Promise<PhotonMessage>;
   setTyping(spaceId: string, senderId: string, typing: boolean): Promise<void>;
+  /** An attachment's bytes and type (photos, files people sent). */
+  downloadAttachment(id: string): Promise<{ contentType: string; data: Buffer }>;
 }
 
 export class PhotonError extends Error {
@@ -208,6 +212,16 @@ export function createPhotonClient(opts: { baseUrl: string; projectId: string; a
           ...(args.parentMessageId ? { parentMessageId: args.parentMessageId } : {}),
         },
       });
+    },
+
+    async downloadAttachment(id) {
+      const res = await fetch(`${root}/attachments/${encodeURIComponent(id)}/content`, {
+        headers: { Authorization: `Bearer ${opts.apiKey}` },
+        redirect: "follow",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!res.ok) throw new PhotonError(res.status, undefined, `Photon GET /attachments/${id}/content → ${res.status}`);
+      return { contentType: res.headers.get("content-type") ?? "application/octet-stream", data: Buffer.from(await res.arrayBuffer()) };
     },
 
     async setTyping(spaceId, senderId, typing) {

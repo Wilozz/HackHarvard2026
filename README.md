@@ -144,6 +144,51 @@ GitHub connects Ensemble's coding workflows to real repositories.
 
 The agent can prepare branches, commits, and pull requests, allowing teammates to review changes before merging them into the project.
 
+## Running Ensemble
+
+The chat flow that's built today: a request in the group becomes a short brief, someone replies `ship it`, and about a minute later a link to a working app arrives. Ask for changes and v2 arrives at its own link.
+
+### Run it
+
+```bash
+npm install
+# .env: ANTHROPIC_API_KEY, PHOTON_PROJECT_ID, PHOTON_API_KEY, DAYTONA_API_KEY, ORBIT_ALLOWED (the roster's numbers)
+npm run dev
+```
+
+In the group chat:
+
+| Text | Ensemble does |
+|---|---|
+| `@Ensemble make space invaders where the aliens are our teammates` | Replies with a short build brief |
+| `ship it` (no mention needed while a brief is waiting) | Builds it; posts `v1 … is live: <link>` about a minute later |
+| `@Ensemble make the aliens faster and add sound` | Edits the same app and posts v2 at a new link (v1 keeps working) |
+| Send a photo, then `@Ensemble make a game where this is the boss` | Uses the photo in the app (it's embedded in the page) |
+| Send a photo, then `@Ensemble what's in this picture?` | Describes it |
+| `@Ensemble versions` | Lists every link |
+| `@Ensemble cancel` | Drops a brief that hasn't been built |
+| `@Ensemble help` | How it works |
+
+### Where each sponsor's tech is used
+
+- **Photon 2.0 beta** (`src/photon/`): the agent's iMessage line. Ensemble polls Photon for group messages, detects `@Ensemble`, and replies in the chat with briefs and links. The signup page (http://127.0.0.1:8788) starts a new group chat from the line.
+- **Daytona** (`src/orbit/hosts.ts`): every app gets its own public sandbox (`public: true`, label `app=orbit`). Each version is uploaded to `v1/`, `v2/`… and served by a web server inside the sandbox; the link in the chat is the sandbox's preview URL. **Claude Code runs headless inside each sandbox** (`claude -p`, installed on first build) and writes the app there; that's the default once a Daytona key is set. `ORBIT_BUILDER=api` switches to writing the file through the Claude API instead. `npm run orbit:cleanup` deletes the sandboxes after the demo.
+- **Claude** (`src/orbit/brief.ts`, `src/orbit/spec.ts`, `src/orbit/builder.ts`): Claude Opus 5.5 writes the short brief the group approves. While they read it, a second call (Claude Sonnet 5.5, `ORBIT_SPEC_MODEL`) turns the brief plus the **whole chat** into a detailed design spec (controls, numbers, palette, sound, screens, inside jokes, a pass/fail checklist), saved as `data/apps/<app>/v1/SPEC.md`. The builder works from that spec, so v1 comes out polished. `ORBIT_SPEC=false` skips it. Claude Code (in Daytona) or the Claude API then writes the whole app as one self-contained HTML file (about 45-60 s). If the post-build check finds console errors, they go back to Claude once for a fix before the link is posted.
+
+**Photos** (`src/orbit/images.ts`): Ensemble looks at photos sent in the chat in the last hour (up to four, including ones sent before the `@Ensemble` message). It downloads them from Photon, converts iPhone HEIC to JPEG and shrinks them to 1024 px, then shows them to Claude for the brief, the spec and the build. Generated code refers to each photo by a placeholder (`ORBIT_IMAGE_1`), which is swapped for the real image afterwards, so the published page is self-contained and edits never send base64 back to Claude. Converted photos are cached in `data/images/` (gitignored).
+
+### Safety
+
+- Only numbers in `ORBIT_ALLOWED` (or, if empty, `members.json` and the signup groups) can request or approve builds. Matching is by the sender's phone number from Photon, never by what the message says.
+- Nothing builds until someone on the roster says `ship it`.
+- Chat text is untrusted input: the brief and build prompts tell Claude to ignore instructions in it, and generated apps may not make network requests or collect personal data.
+- No Photon key ever goes into a sandbox. With the Claude Code builder the sandbox gets the Anthropic key, passed only to the `claude` command; with `api` it holds only the app files.
+- Builds time out after `ORBIT_BUILD_TIMEOUT_S`. Every build is recorded in `data/orbit.json` (who asked, the brief, result, link, build time), and each version's HTML and screenshot is kept in `data/apps/`.
+
+### Photon notes
+
+Replies never send `parentMessageId` (Photon rejects threaded replies on these Spaces). Group messages can arrive under a different Space than the one that can be sent to; `PHOTON_REPLY_SPACES` and the signup-group matching handle that. Details: [docs/photon-setup.md](docs/photon-setup.md).
+
 ## Our Vision
 
 Ensemble reimagines collaborative software development by bringing AI-powered coding directly into the conversations where ideas originate.

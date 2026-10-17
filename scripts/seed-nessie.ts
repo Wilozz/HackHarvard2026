@@ -1,21 +1,28 @@
 // Create a Nessie sandbox customer and checking account for every member in
-// members.json that doesn't have one yet, and write the ids back.
+// members.json (plus everyone from the signup page's groups) that doesn't
+// have one yet, and write the ids back. Edit startBalance in members.json
+// first to give people different budgets.
 //   npm run seed:nessie            → create missing customers/accounts
 //   npm run seed:nessie -- --check → also run a $1 round trip between the first
 //                                    two members to confirm the sandbox accepts
 //                                    our withdrawal/deposit shape
 import { config } from "../src/config";
 import { NessieClient } from "../src/bank/nessie";
+import { mergeGroupMembers } from "../src/bank/roster";
 import { loadRoster, saveRoster } from "../src/members";
+import { GroupRegistry } from "../src/photon/groups";
 
 if (!config.NESSIE_API_KEY) {
-  console.error("Set NESSIE_API_KEY in .env first (get one at http://api.nessieisreal.com).");
+  console.error("Set NESSIE_API_KEY in .env first (get one at https://api.nessieisreal.com).");
   process.exit(1);
 }
 const client = new NessieClient(config.NESSIE_BASE_URL, config.NESSIE_API_KEY);
 const roster = loadRoster();
+// Everyone who signed up through the signup page is a member too.
+const added = mergeGroupMembers(roster, new GroupRegistry(config.GROUPS_FILE).list());
+if (added > 0) saveRoster(roster);
 if (roster.length === 0) {
-  console.error(`No members in ${config.MEMBERS_FILE}. Copy members.example.json to members.json first.`);
+  console.error(`No members in ${config.MEMBERS_FILE} or ${config.GROUPS_FILE}. Sign people up on the signup page, or copy members.example.json to members.json.`);
   process.exit(1);
 }
 

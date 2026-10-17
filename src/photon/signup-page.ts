@@ -10,7 +10,7 @@ export function signupPage(agentName: string, maxMembers: number): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${name} · Start a trip chat</title>
+<title>${name} · Build together</title>
 <style>
 :root {
   --bg: #f4f3ef;
@@ -55,7 +55,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 main { max-width: 560px; margin: 0 auto; padding: 56px 16px 72px; }
-.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); margin-bottom: 20px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); margin-bottom: 20px; }
 .brand svg { width: 22px; height: 22px; }
 h1 { font-size: 32px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 10px; }
 .lede { color: var(--muted); margin: 0 0 28px; font-size: 17px; }
@@ -116,13 +116,13 @@ legend { padding: 0; }
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3C6.5 3 2 6.9 2 11.6c0 2.6 1.4 4.9 3.6 6.5-.2 1.3-.8 2.6-1.8 3.6 2 0 3.8-.8 5-1.9 1 .3 2.1.4 3.2.4 5.5 0 10-3.9 10-8.6S17.5 3 12 3Z"/></svg>
     ${name}
   </div>
-  <h1>Start your trip chat</h1>
-  <p class="lede">Add everyone who's coming. ${name} starts an iMessage group with all of you and suggests a trip that works for the whole group.</p>
+  <h1>Build apps together in your group chat</h1>
+  <p class="lede">Add your friends. ${name} starts an iMessage group with all of you. Text what you want, like a game where the aliens are your friends, and ${name} builds it and sends a link everyone can tap.</p>
 
   <form id="signup" class="card" novalidate>
     <label class="field">
-      <span class="label">What are you planning? <em>Optional</em></span>
-      <input type="text" id="title" maxlength="80" placeholder="Spring break 2027" autocomplete="off">
+      <span class="label">What will you build first? <em>Optional</em></span>
+      <input type="text" id="title" maxlength="80" placeholder="Space invaders with all of us" autocomplete="off">
     </label>
 
     <fieldset>
@@ -145,7 +145,7 @@ legend { padding: 0; }
     <div class="tick"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
     <h2>Check your Messages</h2>
     <p id="done-text"></p>
-    <p class="hint">Mention @${name} in the chat whenever you want a trip idea.</p>
+    <p class="hint">Text "@${name} make…" in the chat to build something.</p>
     <button type="button" id="again" class="link">Start another group</button>
   </section>
 </main>

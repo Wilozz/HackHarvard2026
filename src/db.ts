@@ -68,6 +68,21 @@ create table if not exists ledger (
   unique (account_id, ref)
 );
 
+-- Everything the money flow does, for the live /nessie page and the audit
+-- trail: who became the payer, who approved, each transfer and its result.
+create table if not exists bank_activity (
+  id           bigserial primary key,
+  at           timestamptz not null default now(),
+  chat_id      text,
+  kind         text not null,
+  actor        text,
+  counterparty text,
+  amount       numeric,
+  status       text not null default 'ok',
+  detail       text not null
+);
+create index if not exists bank_activity_at on bank_activity (at desc);
+
 -- "@Tripchat forget" cutoffs: messages sent at or before this time are never
 -- stored again, even when a backfill re-reads them from Photon.
 create table if not exists forgotten_chats (
@@ -83,9 +98,10 @@ alter table chunks enable row level security;
 alter table trips enable row level security;
 alter table ledger enable row level security;
 alter table forgotten_chats enable row level security;
+alter table bank_activity enable row level security;
 `;
 
-export const TABLES = ["messages", "chunks", "trips", "ledger", "forgotten_chats"] as const;
+export const TABLES = ["messages", "chunks", "trips", "ledger", "forgotten_chats", "bank_activity"] as const;
 
 async function openPglite(): Promise<Db> {
   const { PGlite } = await import("@electric-sql/pglite");

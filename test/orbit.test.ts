@@ -1,0 +1,280 @@
+// Orbit through the Photon loop: brief → "ship it" → build → link → v2.
+// Photon, Claude, the browser check and the host are all fakes.
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+const { mkdtempSync: mkTmp } = await import("node:fs");
+const { tmpdir: tmp } = await import("node:os");
+const { join: joinPath } = await import("node:path");
+Object.assign(process.env, {
+  // Image cache and app files go to a temp folder, never data/.
+  ORBIT_APPS_DIR: joinPath(mkTmp(joinPath(tmp(), "orbit-test-")), "apps"),
+  PLATFORM: "terminal",
+  PHOTON_AGENT_USER_ID: "",
+  AGENT_NAME: "Orbit",
+  PGLITE_DIR: "memory://",
+  DATABASE_URL: "",
+  DEBUG_PORT: "0",
+  ORBIT_ALLOWED: "",
+  ORBIT_CONFIRM_EDITS: "false",
+});
+
+const { PhotonAgent } = await import("../src/photon/agent");
+const { GroupRegistry } = await import("../src/photon/groups");
+const { OrbitService, parseOrbitCommand, isShipIt } = await import("../src/orbit/service");
+const { OrbitStore } = await import("../src/orbit/store");
+const { extractHtml } = await import("../src/orbit/builder");
+const { mkdtempSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+type Member = import("../src/members").Member;
+type PhotonApi = import("../src/photon/api").PhotonApi;
+type PhotonMessage = import("../src/photon/api").PhotonMessage;
+type SendTextArgs = import("../src/photon/api").SendTextArgs;
+type GenerateArgs = import("../src/orbit/builder").GenerateArgs;
+type Project = import("../src/orbit/store").Project;
+
+const WILSON: Member = { name: "Wilson", handles: ["+61452598886"], startBalance: 0 };
+const HARSH: Member = { name: "Harsh", handles: ["+15513318011"], startBalance: 0 };
+const STRANGER = { name: "Stranger", handles: ["+19995550123"] };
+
+class FakePhoton implements PhotonApi {
+  messages: PhotonMessage[] = [];
+  sent: SendTextArgs[] = [];
+  private clock = 0;
+  private next = 0;
+  addPhoto(from: { name: string; handles: string[] }, id: string, data: Buffer): PhotonMessage {
+    const m = this.add(from, "");
+    m.content = { type: "attachment", attachmentId: id };
+    this.attachments.set(id, data);
+    return m;
+  }
+  add(from: { name: string; handles: string[] }, text: string): PhotonMessage {
+    this.clock = Math.max(this.clock + 1000, Date.now());
+    const m: PhotonMessage = {
+      id: `pho_msg_${++this.next}`,
+      platform: "imessage",
+      status: "received",
+      createdAt: new Date(this.clock).toISOString(),
+      space: { id: "pho_spc_group", kind: "group", participantIds: ["pho_usr_agent"] },
+      sentBy: { id: `pho_usr_${from.name}`, kind: "human", handle: from.handles[0]! },
+      content: { type: "text", format: "plain", text },
+    };
+    this.messages.push(m);
+    return m;
+  }
+  async *listMessages(q: { createdSince?: string }) {
+    yield* this.messages.filter((m) => !q.createdSince || m.createdAt >= q.createdSince);
+  }
+  async getMessage(id: string) {
+    return this.messages.find((m) => m.id === id)!;
+  }
+  async listAgents() {
+    return [{ id: "pho_usr_agent", kind: "agent", handle: "+16285550000", details: { type: "dedicated" } }];
+  }
+  async createUser(): Promise<never> {
+    throw new Error("unused");
+  }
+  async createSpace(): Promise<never> {
+    throw new Error("unused");
+  }
+  async sendText(args: SendTextArgs) {
+    this.sent.push(args);
+    return { id: `pho_msg_out${this.sent.length}`, status: "dispatched", createdAt: new Date().toISOString() } as PhotonMessage;
+  }
+  async setTyping() {}
+  async downloadAttachment(id: string) {
+    const data = this.attachments.get(id);
+    if (!data) throw new Error(`no attachment ${id}`);
+    return { contentType: "image/png", data };
+  }
+  attachments = new Map<string, Buffer>();
+}
+
+function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean } = {}) {
+  const api = new FakePhoton();
+  const generated: GenerateArgs[] = [];
+  const specs: { title: string; brief: string; transcript: string; images?: { label: string }[] }[] = [];
+  const briefImages: string[][] = [];
+  const published: { project: string; n: number; html: string }[] = [];
+  const qualityRuns = [...(opts.qualityErrors ?? [])];
+  const store = new OrbitStore(null, mkdtempSync(join(tmpdir(), "orbit-")));
+  const orbit = new OrbitService(
+    store,
+    {
+      name: "local",
+      async publish(project: Project, n: number, html: string) {
+        published.push({ project: project.id, n, html });
+        return { url: `https://3000-sbx.example/v${n}/` };
+      },
+    },
+    [WILSON, HARSH],
+    new GroupRegistry(),
+    {
+      writeBrief: async ({ request, current, images }) => (briefImages.push((images ?? []).map((i) => i.label)), 0) ||
+        /joke/i.test(request)
+          ? { action: "reply", title: "", brief: "", reply: "I build small web apps." }
+          : current
+            ? { action: "edit", title: current.title, brief: `Change: ${request}`, reply: "" }
+            : { action: "build", title: "Cat Flap", brief: `A flappy game: ${request}`, reply: "" },
+      writeSpec: async ({ title, brief, transcript, images }) => {
+        specs.push({ title, brief, transcript, images });
+        return `SPEC for ${title}: ${brief}`;
+      },
+      generateApp: async (args) => {
+        generated.push(args);
+        if (opts.failBuild) throw new Error("model declined the request");
+        // Like the real builder: refer to photos only by their placeholders, and keep any that were already there.
+        const photos = (args.images ?? []).map((_, i) => `<img src="ORBIT_IMAGE_${i + 1}">`).join("");
+        const kept = args.previousHtml?.match(/<img src="ORBIT_IMAGE_\d+">/g)?.join("") ?? "";
+        return `<!doctype html><html><body>${args.brief}${args.errors ? " (fixed)" : ""}${args.previousHtml ? kept : photos}</body></html>`;
+      },
+      checkApp: async () => ({ ran: true, errors: qualityRuns.shift() ?? [] }),
+    },
+  );
+  const agent = new PhotonAgent(api, [WILSON, HARSH], {
+    brain: { suggestTrip: async () => "unused" },
+    memory: { store: async () => {}, context: async () => ({ transcript: "", debug: [] }), forget: async () => {}, cutoffs: async () => new Map() },
+    replySpaces: new Map(),
+    groups: new GroupRegistry(),
+    orbit,
+  });
+  const step = async () => {
+    await agent.poll();
+    await agent.idle();
+    await orbit.idle();
+  };
+  const texts = () => api.sent.map((s) => s.text);
+  return { api, agent, orbit, store, generated, published, specs, briefImages, step, texts };
+}
+
+test("parses Orbit commands", () => {
+  assert.deepEqual(parseOrbitCommand("ship it!"), { kind: "ship" });
+  assert.deepEqual(parseOrbitCommand("versions"), { kind: "versions" });
+  assert.deepEqual(parseOrbitCommand("never mind"), { kind: "cancel" });
+  assert.deepEqual(parseOrbitCommand(""), { kind: "help" });
+  assert.deepEqual(parseOrbitCommand("make snake"), { kind: "request", text: "make snake" });
+  assert.ok(isShipIt("Ship it."));
+  assert.ok(!isShipIt("ship it to my mom later"));
+  assert.equal(extractHtml("Sure!\n```html\n<!doctype html><html>x</html>\n```"), "<!doctype html><html>x</html>");
+  assert.throws(() => extractHtml("no html here"));
+});
+
+test("brief, ship it, link, then an edit posts v2 at its own link", async () => {
+  const { api, agent, store, generated, published, specs, step, texts } = setup();
+  await agent.start();
+
+  api.add(HARSH, "lol we need a game");
+  api.add(WILSON, "@Orbit make flappy bird with a cat");
+  await step();
+  assert.equal(texts().length, 1);
+  assert.match(texts()[0]!, /^Here's the plan for Cat Flap \(v1\):\n\nA flappy game: make flappy bird with a cat\n\nReply "ship it"/);
+  assert.equal(generated.length, 0, "nothing builds before ship it");
+
+  api.add(HARSH, "ship it");
+  await step();
+  assert.match(texts()[1]!, /^Building Cat Flap/);
+  assert.match(texts()[2]!, /^v1 of Cat Flap is live: https:\/\/3000-sbx\.example\/v1\//);
+  assert.equal(published[0]!.n, 1);
+  // v1 is built from a design spec written from the whole chat, not just the brief.
+  assert.equal(specs.length, 1);
+  assert.match(specs[0]!.transcript, /Harsh: lol we need a game/);
+  // It was started from the request, before anyone said ship it.
+  assert.doesNotMatch(specs[0]!.transcript, /ship it/);
+  assert.equal(generated[0]!.spec, "SPEC for Cat Flap: A flappy game: make flappy bird with a cat");
+
+  api.add(HARSH, "@Orbit make the cat faster");
+  await step();
+  assert.match(texts()[3]!, /^On it: v2 of Cat Flap\. Change: make the cat faster/);
+  assert.match(texts()[4]!, /^v2 of Cat Flap is live: https:\/\/3000-sbx\.example\/v2\//);
+  // The edit was made on top of v1's HTML, without a new spec.
+  assert.match(generated[1]!.previousHtml!, /A flappy game/);
+  assert.equal(generated[1]!.spec, undefined);
+  assert.equal(specs.length, 1);
+
+  api.add(WILSON, "@Orbit versions");
+  await step();
+  assert.equal(texts()[5], "Cat Flap v1: https://3000-sbx.example/v1/\nCat Flap v2: https://3000-sbx.example/v2/");
+
+  const chat = store.chat("imessage:pho_spc_group");
+  assert.deepEqual(chat.projects[0]!.versions.map((v) => [v.n, v.status, v.requestedBy]), [[1, "live", "Wilson"], [2, "live", "Harsh"]]);
+  // Every reply has its own idempotency key.
+  assert.equal(new Set(api.sent.map((s) => s.idempotencyKey)).size, api.sent.length);
+});
+
+test("ignores people who aren't on the roster, and stray ship-its", async () => {
+  const { api, agent, generated, step, texts } = setup();
+  await agent.start();
+  api.add(STRANGER, "@Orbit make a game");
+  api.add(WILSON, "ship it"); // nothing pending, no mention: ordinary chatter
+  await step();
+  assert.deepEqual(texts(), []);
+
+  api.add(WILSON, "@Orbit make a game");
+  api.add(STRANGER, "ship it");
+  await step();
+  assert.equal(texts().length, 1);
+  assert.equal(generated.length, 0, "a stranger can't approve a build");
+
+  api.add(WILSON, "@Orbit cancel");
+  await step();
+  assert.equal(texts()[1], "Okay, scrapped that plan.");
+  api.add(WILSON, "@Orbit ship it");
+  await step();
+  assert.match(texts()[2]!, /nothing waiting to build/);
+});
+
+test("console errors from the check go back to Claude once", async () => {
+  const { api, agent, store, generated, published, step, texts } = setup({ qualityErrors: [["uncaught: x is not defined"]] });
+  await agent.start();
+  api.add(WILSON, "@Orbit make a game");
+  api.add(WILSON, "ship it");
+  await step();
+  assert.deepEqual(generated[1]!.errors, ["uncaught: x is not defined"]);
+  assert.match(published.at(-1)!.html, /\(fixed\)/);
+  assert.match(texts().at(-1)!, /is live/);
+  assert.equal(store.chat("imessage:pho_spc_group").projects[0]!.versions[0]!.fixedErrors, 1);
+});
+
+test("a failed build says so and keeps the chat usable", async () => {
+  const { api, agent, step, texts } = setup({ failBuild: true });
+  await agent.start();
+  api.add(WILSON, "@Orbit make a game");
+  api.add(WILSON, "ship it");
+  await step();
+  assert.match(texts().at(-1)!, /^v1 didn't build \(model declined the request\)/);
+  api.add(WILSON, "@Orbit tell me a joke");
+  await step();
+  assert.equal(texts().at(-1), "I build small web apps.");
+});
+
+test("photos from the chat reach Claude and end up inside the app", async () => {
+  const sharp = (await import("sharp")).default;
+  const red = await sharp({ create: { width: 40, height: 30, channels: 3, background: "#ff0000" } }).png().toBuffer();
+  const { api, agent, store, generated, published, specs, briefImages, step } = setup();
+  await agent.start();
+
+  // The photo arrives on its own, then someone asks.
+  api.addPhoto(HARSH, "pho_att_face", red);
+  api.add(WILSON, "@Orbit make space invaders where this is the boss");
+  await step();
+  assert.deepEqual(briefImages[0], ["Photo sent by Harsh:"]);
+  api.add(WILSON, "ship it");
+  await step();
+
+  assert.equal(specs[0]!.images?.[0]?.label, "Image 1, sent by Harsh (use it as ORBIT_IMAGE_1):");
+  assert.equal(generated[0]!.images?.length, 1);
+  // The published app has the real photo (a JPEG data URI), not the placeholder.
+  const v1 = published.at(-1)!.html;
+  assert.match(v1, /<img src="data:image\/jpeg;base64,[A-Za-z0-9+/=]{100,}">/);
+  assert.doesNotMatch(v1, /ORBIT_IMAGE_1/);
+  const project = store.chat("imessage:pho_spc_group").projects[0]!;
+  assert.deepEqual(project.images, [{ id: "pho_att_face", sentBy: "Harsh" }]);
+
+  // An edit sends Claude placeholders, not base64, and the photo stays in its slot.
+  api.add(WILSON, "@Orbit make the boss bigger");
+  await step();
+  assert.match(generated[1]!.previousHtml!, /<img src="ORBIT_IMAGE_1">/);
+  assert.doesNotMatch(generated[1]!.previousHtml!, /base64/);
+  assert.match(published.at(-1)!.html, /<img src="data:image\/jpeg;base64,/);
+});

@@ -5,4 +5,7 @@ data/pglite/
 data/models/
 *.log
 data/groups.json
+data/orbit.json
+data/apps/
+data/images/
 web/dist/
