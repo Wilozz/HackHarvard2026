@@ -76,7 +76,10 @@ async function openPglite(): Promise<Db> {
 
 async function openPostgres(url: string): Promise<Db> {
   const { default: pg } = await import("pg");
-  const pool = new pg.Pool({ connectionString: url });
+  // Supabase serves TLS from its own CA, which Node doesn't trust by default,
+  // so encrypt without verifying the chain there. Other hosts use the URL's sslmode.
+  const supabase = /\.supabase\.(co|com)$/.test(new URL(url).hostname);
+  const pool = new pg.Pool({ connectionString: url, ssl: supabase ? { rejectUnauthorized: false } : undefined });
   return {
     async query<T>(sql: string, params: unknown[] = []) {
       const res = await pool.query(sql, params);
