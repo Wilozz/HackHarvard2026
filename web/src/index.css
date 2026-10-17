@@ -5,51 +5,54 @@
 
 /* shadcn tokens. --primary and --ring come from the input-form component. */
 :root {
-  --radius: 0.625rem;
-  --background: #ffffff;
-  --foreground: #0a0a0a;
+  /* Orbit palette, matched to the hero (orbit-delivery-hero.tsx) so the page reads as one surface. */
+  --radius: 0.75rem;
+  --background: #f0f6ff;
+  --foreground: #080e2b;
   --card: #ffffff;
-  --card-foreground: #0a0a0a;
+  --card-foreground: #080e2b;
   --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #4680ff;
+  --popover-foreground: #080e2b;
+  --primary: #4673eb;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --accent-foreground: #18181b;
-  --destructive: #dc2626;
+  --secondary: #e6eefc;
+  --secondary-foreground: #080e2b;
+  --muted: #e6eefc;
+  --muted-foreground: #7a87aa;
+  --accent: #e6eefc;
+  --accent-foreground: #080e2b;
+  --destructive: #d93a3a;
   --destructive-foreground: #ffffff;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #4680ff;
+  --border: #dce5fa;
+  --input: #d3dff7;
+  --ring: #4673eb;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
-  --primary: #4680ff;
+  --background: #0f1a30;
+  --foreground: #f3f6ff;
+  --card: #15223d;
+  --card-foreground: #f3f6ff;
+  --popover: #15223d;
+  --popover-foreground: #f3f6ff;
+  --primary: #4f7bf0;
   --primary-foreground: #ffffff;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
-  --destructive: #ef4444;
+  --secondary: #1c2b4a;
+  --secondary-foreground: #f3f6ff;
+  --muted: #1c2b4a;
+  --muted-foreground: #b0bed9;
+  --accent: #1f3053;
+  --accent-foreground: #f3f6ff;
+  --destructive: #f87171;
   --destructive-foreground: #ffffff;
-  --border: #27272a;
-  --input: #3f3f46;
-  --ring: #4680ff;
+  --border: #233456;
+  --input: #2a3c61;
+  --ring: #8daaff;
 }
 
 @theme inline {
+  --font-sans: "DM Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -1,15 +1,19 @@
 import { useState, type FormEvent } from "react";
-import { CircleCheck, MessageCircle, Plus, X } from "lucide-react";
+import { CircleCheck, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { MotionConfig } from "motion/react";
+import { Hero } from "@/components/orbit/Hero";
 import { PhoneInput } from "@/components/ui/reui-phone-input";
 
 // The signup form: everyone's name and number in, one iMessage group chat out.
 // Same contract as the server's fallback page (src/photon/signup-page.ts):
 // POST /api/groups {consent, members: [{name, phone}]}.
 
-const AGENT = "Tripchat";
+const BRAND = "Orbit";
+// The name people @mention in iMessage. Must match AGENT_NAME in the agent's .env.
+const MENTION = "Tripchat";
 const MIN_PEOPLE = 2;
 const MAX_PEOPLE = 10; // src/photon/signup.ts MAX_MEMBERS
 
@@ -73,33 +77,34 @@ export default function App() {
     setCreated(undefined);
   }
 
+  const toSignup = () => document.getElementById("signup")?.scrollIntoView({ behavior: "smooth", block: "start" });
+
   return (
-    <main className="mx-auto w-full max-w-xl px-4 pt-14 pb-18 sm:pt-16">
-      <div className="mb-5 inline-flex items-center gap-2 font-semibold text-primary">
-        <MessageCircle className="size-5" aria-hidden />
-        {AGENT}
-      </div>
-      <h1 className="mb-2.5 text-3xl font-semibold tracking-tight sm:text-4xl">Start your trip chat</h1>
-      <p className="mb-7 text-muted-foreground sm:text-lg">
-        Add everyone who's coming. {AGENT} starts an iMessage group with all of you and suggests a trip that works for the whole group.
+    <MotionConfig reducedMotion="user">
+    <Hero onStart={toSignup} />
+    <section id="signup" className="mx-auto w-full max-w-xl scroll-mt-6 px-4 pt-6 pb-24 sm:pt-10">
+      <p className="mb-4 text-xs font-medium tracking-[0.36em] text-primary uppercase dark:text-[#8daaff]">Get started</p>
+      <h2 className="mb-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Start your group chat</h2>
+      <p className="mb-8 text-muted-foreground sm:text-lg">
+        Add everyone who's coming. {BRAND} starts an iMessage group with all of you and plans a trip that works for the whole group.
       </p>
 
       {created ? (
-        <section className="rounded-xl border bg-card p-8 text-center" aria-live="polite">
+        <section className="rounded-2xl border bg-card/80 p-8 text-center shadow-[0_25px_120px_#183c7314] backdrop-blur" aria-live="polite">
           <CircleCheck className="mx-auto mb-4 size-12 text-green-600" aria-hidden />
           <h2 className="mb-2 text-2xl font-semibold">Check your Messages</h2>
           <p className="mb-3">
             {created.existing
-              ? `You already have a group chat with ${listNames(created.names)}, so ${AGENT} didn't send a second welcome. Names are updated.`
-              : `${AGENT}${created.agentPhone ? ` (${created.agentPhone})` : ""} just texted ${listNames(created.names)}.`}
+              ? `You already have a group chat with ${listNames(created.names)}, so ${BRAND} didn't send a second welcome. Names are updated.`
+              : `${BRAND}${created.agentPhone ? ` (${created.agentPhone})` : ""} just texted ${listNames(created.names)}.`}
           </p>
-          <p className="mb-4 text-sm text-muted-foreground">Mention @{AGENT} in the chat whenever you want a trip idea.</p>
+          <p className="mb-4 text-sm text-muted-foreground">Mention @{MENTION} in the chat whenever you want a trip idea.</p>
           <Button variant="link" onClick={startOver}>
             Start another group
           </Button>
         </section>
       ) : (
-        <form onSubmit={submit} noValidate className="rounded-xl border bg-card p-5 sm:p-6">
+        <form onSubmit={submit} noValidate className="rounded-2xl border bg-card/80 p-5 shadow-[0_25px_120px_#183c7314] backdrop-blur sm:p-7">
           <FieldGroup>
             <Field>
               <FieldLabel>Who's in?</FieldLabel>
@@ -143,7 +148,7 @@ export default function App() {
             <Field orientation="horizontal" className="items-start">
               <input id="consent" type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
               <FieldLabel htmlFor="consent" className="font-normal">
-                Everyone on this list agreed to be added to a group chat with {AGENT}.
+                Everyone on this list agreed to be added to a group chat with {BRAND}.
               </FieldLabel>
             </Field>
 
@@ -155,6 +160,7 @@ export default function App() {
           </FieldGroup>
         </form>
       )}
-    </main>
+    </section>
+    </MotionConfig>
   );
 }
