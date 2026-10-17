@@ -185,9 +185,10 @@ test("brief, ship it, link, then an edit posts v2 at its own link", async () => 
   assert.doesNotMatch(specs[0]!.transcript, /ship it/);
   assert.equal(generated[0]!.spec, "SPEC for Cat Flap: A flappy game: make flappy bird with a cat");
 
-  api.add(HARSH, "@Orbit make the cat faster");
+  const edit = "make the cat faster. " + "Keep the white cloud sticker with its thick black outline. ".repeat(12) + "Finish with a restart button.";
+  api.add(HARSH, `@Orbit ${edit}`);
   await step();
-  assert.match(texts()[3]!, /^On it: v2 of Cat Flap\. Change: make the cat faster/);
+  assert.equal(texts()[3], `On it: v2 of Cat Flap. Change: ${edit}`);
   assert.match(texts()[4]!, /^v2 of Cat Flap is live: https:\/\/3000-sbx\.example\/v2\//);
   // The edit was made on top of v1's HTML, without a new spec.
   assert.match(generated[1]!.previousHtml!, /A flappy game/);

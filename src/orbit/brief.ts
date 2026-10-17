@@ -27,7 +27,7 @@ What you can build: one single-page web app that runs in a phone browser: games,
 
 People may have sent photos; each is labeled with who sent it. Look at them. A photo can go into the app (someone's face as the boss, a pet as the player, a sticker as the theme), so a build or edit brief should say which photo goes where, by who sent it or what it shows. If they ask about a photo ("what's this?", "rate my fit"), answer from what you see as a "reply".
 
-Write plain text, no markdown.`;
+Write plain text, no markdown. Keep replies concise, but always finish every sentence and thought. Never cut off a brief or reply or use an ellipsis to omit the rest just to save space.`;
 
 export async function writeBrief(args: {
   transcript: string;
