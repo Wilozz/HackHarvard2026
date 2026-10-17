@@ -6,7 +6,7 @@ import type { GroupRegistry } from "../photon/groups";
 import { writeBrief } from "./brief";
 import { generateApp } from "./builder";
 import { writeSpec } from "./spec";
-import { findRepoUrl } from "./github";
+import { findRepoUrl, parseRepo, type RepoRef } from "./github";
 import type { ChangeResult, RepoWorker } from "./repo";
 import { writeRepoPlan } from "./repoPlan";
 import { DaytonaHost, type AppHost } from "./hosts";
@@ -125,7 +125,7 @@ export class OrbitService {
             `I'm ${n}. Tell me what to build and I'll make it and send you a link, like "@${n} make flappy bird with a cat and neon colors".`,
             `I'll write up the plan first; reply "ship it" to build it. After that, ask for changes ("@${n} make it faster") and I'll post a new version.`,
             `"@${n} versions" lists every link. "@${n} cancel" drops a plan I haven't built.`,
-            `To work on code instead, paste a GitHub link: "@${n} work on github.com/you/repo". I'll clone it, make changes on their own branches and open pull requests.`,
+            `To work on code instead, type the repo: "@${n} work on owner/repo" (or "@${n} work on your own code"). I'll clone it, make changes on their own branches and open pull requests.`,
           ].join("\n\n"),
           "help",
         );
@@ -180,20 +180,7 @@ export class OrbitService {
         }
         const ref = findRepoUrl(cmd.text);
         if (ref) {
-          if (!this.repos) {
-            await turn.say(`Working on GitHub repos needs a Daytona sandbox, and there's no DAYTONA_API_KEY set.`, "repo");
-            return;
-          }
-          const worker = this.repos;
-          this.startJob(chat, `cloning ${ref.owner}/${ref.name}`, turn, `clone:${ref.owner}/${ref.name}`, async () => {
-            const repo = await worker.attach(ref);
-            chat.repo = repo;
-            delete chat.pendingRepo;
-            this.store.save();
-            const push = repo.canPush ? "" : "\n\nThere's no GitHub token that can push here, so changes will stay in the sandbox (no branches pushed or pull requests opened).";
-            return `Cloned ${repo.owner}/${repo.name} (${repo.defaultBranch}). ${repo.summary}\n\nAsk me for a change, like "@${n} add a dark mode toggle", or anything about the code or its history.${push}`;
-          });
-          await turn.say(`Cloning ${ref.owner}/${ref.name} into a sandbox and reading through it. This takes a minute or two.`, "cloning");
+          await this.attachRepo(chat, ref, turn);
           return;
         }
         if (chat.repo && this.repos) {
@@ -218,6 +205,15 @@ export class OrbitService {
           images: photos.map((p) => ({ label: `Photo sent by ${p.sentBy}:`, data: p.data })),
         });
         const target = brief.action === "edit" ? chat.projects.find((p) => p.id === brief.projectId) : undefined;
+        if (brief.action === "repo") {
+          const wanted = brief.repo.trim().toLowerCase() === "self" ? parseRepo(config.ENSEMBLE_REPO) : parseRepo(brief.repo);
+          if (!wanted) {
+            await turn.say(`Which repo? Type it as owner/name, like "@${n} work on Wilozz/HackHarvard2026". (Link previews don't reach me, so plain text works best.)`, "which-repo");
+            return;
+          }
+          await this.attachRepo(chat, wanted, turn, brief.brief ? { title: brief.title || "Update from the group chat", brief: brief.brief } : undefined);
+          return;
+        }
         if (brief.action === "reply") {
           await turn.say(brief.reply || `Tell me what to build, like "@${n} make snake with emoji".`, "reply");
           return;
@@ -302,6 +298,35 @@ export class OrbitService {
     })().catch((err) => log.error("orbit_build_crashed", err, { chatId: chat.chatId }));
     this.running.add(job);
     void job.finally(() => this.running.delete(job));
+  }
+
+  /**
+   * Clone a repo into its own sandbox and post Claude Code's summary. If the
+   * request also asked for a change, that comes back as a plan waiting for
+   * "ship it", so nobody has to ask twice.
+   */
+  private async attachRepo(chat: OrbitChat, ref: RepoRef, turn: OrbitTurn, change?: { title: string; brief: string }): Promise<void> {
+    const n = config.AGENT_NAME;
+    if (!this.repos) {
+      await turn.say(`Working on GitHub repos needs a Daytona sandbox, and there's no DAYTONA_API_KEY set.`, "repo");
+      return;
+    }
+    const worker = this.repos;
+    this.startJob(chat, `cloning ${ref.owner}/${ref.name}`, turn, `clone:${ref.owner}/${ref.name}`, async () => {
+      const repo = await worker.attach(ref);
+      chat.repo = repo;
+      delete chat.pendingRepo;
+      const push = repo.canPush ? "" : "\n\nThere's no GitHub token that can push here, so changes will stay in the sandbox (no branches pushed or pull requests opened).";
+      const intro = `Cloned ${repo.owner}/${repo.name} (${repo.defaultBranch}). ${repo.summary}`;
+      if (change) {
+        chat.pendingRepo = { action: "change", title: change.title, brief: change.brief, requestedBy: turn.askedBy, at: new Date().toISOString() };
+        this.store.save();
+        return `${intro}\n\nHere's the plan:\n\n${change.brief}\n\nI'll do it on a new branch off ${repo.defaultBranch}${repo.canPush ? " and open a pull request" : ""}. Reply "ship it" to start.${push}`;
+      }
+      this.store.save();
+      return `${intro}\n\nAsk me for a change, like "@${n} add a dark mode toggle", or anything about the code or its history.${push}`;
+    });
+    await turn.say(`Cloning ${ref.owner}/${ref.name} into a sandbox and reading through it. This takes a minute or two.`, "cloning");
   }
 
   /** Repo mode: work out what the message wants, then answer, or post a plan that waits for "ship it". */

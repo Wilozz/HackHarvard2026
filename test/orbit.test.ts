@@ -117,14 +117,17 @@ function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean; repos?: 
       writeBrief: async ({ request, apps, images, transcript }) => {
         briefImages.push((images ?? []).map((i) => i.label));
         briefTranscripts.push(transcript);
-        if (/joke/i.test(request)) return { action: "reply", title: "", projectId: "", brief: "", reply: "I build small web apps." };
+        if (/joke/i.test(request)) return { action: "reply", title: "", projectId: "", repo: "", brief: "", reply: "I build small web apps." };
+        if (/this repository|your own code/i.test(request)) {
+          return { action: "repo", repo: "self", title: "Structured replies", projectId: "", brief: "Format chat replies with short bullet points.", reply: "" };
+        }
         const named = apps?.find((a) => request.toLowerCase().includes(a.title.toLowerCase().split(" ")[0]!));
         const current = apps?.find((a) => a.current);
         if (/\bnew\b/i.test(request) || !(named ?? current)) {
-          return { action: "build", title: /snake/i.test(request) ? "Neon Snake" : "Cat Flap", projectId: "", brief: `A flappy game: ${request}`, reply: "" };
+          return { action: "build", title: /snake/i.test(request) ? "Neon Snake" : "Cat Flap", projectId: "", repo: "", brief: `A flappy game: ${request}`, reply: "" };
         }
         const t = named ?? current!;
-        return { action: "edit", title: t.title, projectId: t.id, brief: `Change: ${request}`, reply: "" };
+        return { action: "edit", title: t.title, projectId: t.id, repo: "", brief: `Change: ${request}`, reply: "" };
       },
       writeSpec: async ({ title, brief, transcript, images }) => {
         specs.push({ title, brief, transcript, images });
@@ -413,4 +416,35 @@ test("each app only sees its own part of the chat, and going back to an old app 
   assert.deepEqual([cat!.title, cat!.versions.length, snake!.title, snake!.versions.length], ["Cat Flap", 2, "Neon Snake", 1]);
   assert.equal(chat.currentProjectId, cat!.id);
   assert.deepEqual(chat.segments!.map((x) => x.projectId), [cat!.id, snake!.id, cat!.id, null]);
+});
+
+test("asking to change Ensemble's own code clones its repo and carries the change over as a plan", async () => {
+  const calls: string[] = [];
+  const repos = {
+    async attach(ref: { owner: string; name: string; url: string }) {
+      calls.push(`attach ${ref.owner}/${ref.name}`);
+      return { ...ref, defaultBranch: "main", canPush: true, sandboxId: "sbx", dir: "/repo", summary: "Ensemble's code.", branches: [] };
+    },
+    async ask() {
+      return "";
+    },
+    async change(state: { branches: unknown[] }, args: { brief: string }) {
+      calls.push(`change ${args.brief}`);
+      const branch = { name: "ensemble/structured-replies-x1", title: "Structured replies", base: "main", createdBy: "Wilson", commits: [], prUrl: "https://github.com/Wilozz/HackHarvard2026/pull/9" };
+      return { changed: true, branch, commit: { sha: "abc1234", message: "Format replies as bullets", by: "Wilson", at: "" }, stat: "1 file changed", report: "Done.", pushed: true };
+    },
+    async rollback(): Promise<never> {
+      throw new Error("unused");
+    },
+  };
+  const { api, agent, step, texts } = setup({ repos: repos as never });
+  await agent.start();
+  api.add(WILSON, "@Orbit edit this repository so your text output uses bullet points");
+  await step();
+  assert.deepEqual(calls, ["attach Wilozz/HackHarvard2026"]);
+  assert.match(texts().at(-1)!, /^Cloned Wilozz\/HackHarvard2026 \(main\)\. Ensemble's code\.\n\nHere's the plan:\n\nFormat chat replies with short bullet points\./);
+  api.add(HARSH, "ship it");
+  await step();
+  assert.equal(calls.at(-1), "change Format chat replies with short bullet points.");
+  assert.match(texts().at(-1)!, /Pull request: https:\/\/github\.com\/Wilozz\/HackHarvard2026\/pull\/9/);
 });
