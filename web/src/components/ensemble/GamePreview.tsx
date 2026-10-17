@@ -42,7 +42,7 @@ function useSize<T extends HTMLElement>() {
 function Building() {
   const [shown, setShown] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setShown((n) => Math.min(n + 1, codeLines.length)), 160);
+    const id = setInterval(() => setShown((n) => Math.min(n + 1, codeLines.length)), 210);
     return () => clearInterval(id);
   }, []);
   return (
@@ -58,7 +58,7 @@ function Building() {
         Claude is writing your game…
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-foreground/10">
-        <motion.div className="h-full rounded-full bg-primary" initial={{ width: "4%" }} animate={{ width: "100%" }} transition={{ duration: 2.2, ease: "easeInOut" }} />
+        <motion.div className="h-full rounded-full bg-primary" initial={{ width: "4%" }} animate={{ width: "100%" }} transition={{ duration: 3, ease: "easeInOut" }} />
       </div>
       <pre className="overflow-hidden font-mono text-[12px] leading-6 text-muted-foreground">
         {codeLines.slice(0, shown).map((line, i) => (

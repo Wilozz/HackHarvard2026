@@ -10,7 +10,7 @@ import { firstVersion, script, scriptMs, timing, type Speaker } from "./script";
 
 const STOP = Symbol("stop");
 /** Stretches every pause in the script so each chat message and change has time to land. */
-const PACE = 0.74;
+const PACE = 0.95;
 const TICK = 50;
 /** Gap between the card's edge and its panels, and between the two panels. */
 const INSET = 10;
