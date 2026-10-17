@@ -175,6 +175,19 @@ In the group chat:
 - **Daytona** (`src/orbit/hosts.ts`): every app gets its own public sandbox (`public: true`, label `app=orbit`). Each version is uploaded to `v1/`, `v2/`… and served by a web server inside the sandbox; the link in the chat is the sandbox's preview URL. **Claude Code runs headless inside each sandbox** (`claude -p`, installed on first build) and writes the app there; that's the default once a Daytona key is set. `ORBIT_BUILDER=api` switches to writing the file through the Claude API instead. `npm run orbit:cleanup` deletes the sandboxes after the demo.
 - **Claude** (`src/orbit/brief.ts`, `src/orbit/spec.ts`, `src/orbit/builder.ts`): Claude Opus 5.5 writes the short brief the group approves. While they read it, a second call (Claude Sonnet 5.5, `ORBIT_SPEC_MODEL`) turns the brief plus the **whole chat** into a detailed design spec (controls, numbers, palette, sound, screens, inside jokes, a pass/fail checklist), saved as `data/apps/<app>/v1/SPEC.md`. The builder works from that spec, so v1 comes out polished. `ORBIT_SPEC=false` skips it. Claude Code (in Daytona) or the Claude API then writes the whole app as one self-contained HTML file (about 45-60 s). If the post-build check finds console errors, they go back to Claude once for a fix before the link is posted.
 
+**Repo mode** (`src/orbit/repo.ts`, `src/orbit/github.ts`, `src/orbit/repoPlan.ts`): paste a GitHub link (`@Ensemble work on github.com/you/repo`) and Ensemble clones it into its own Daytona sandbox (Daytona's git API, full history), then Claude Code reads it and posts a summary. After that, messages about the repo are routed by a small Claude call:
+
+| Text | Ensemble does |
+|---|---|
+| `@Ensemble add a dark mode toggle` | Posts a plan; after `ship it`, Claude Code makes the change on a new `ensemble/…` branch and runs the repo's tests, then Ensemble commits it (Claude writes the message), pushes the branch and opens a pull request |
+| `@Ensemble also make it remember the choice` | Same, but on the branch already in progress (same PR) |
+| `@Ensemble show the last commits` / `what changed?` / `compare our branch to main` | Claude Code answers from `git log` and `git diff` with read-only tools |
+| `@Ensemble undo that` / `restore it to 1a2b3c4` | Asks for `ship it`, then reverts (or restores files) as a new commit on the branch and pushes. Without a named commit it only undoes Ensemble's own latest commit |
+| `@Ensemble versions` | Lists the branches and pull requests |
+| `@Ensemble we're done with the repo` | Back to building apps |
+
+Every change request gets its own branch and PR, and one task runs at a time per chat, so teammates never overwrite each other. Ensemble never pushes to the default branch and never force-pushes. The GitHub token is only passed to Daytona's clone, pull and push calls, never to Claude Code; Claude Code gets the Anthropic key and is told the repo's files are data, not instructions.
+
 **Photos** (`src/orbit/images.ts`): Ensemble looks at photos sent in the chat in the last hour (up to four, including ones sent before the `@Ensemble` message). It downloads them from Photon, converts iPhone HEIC to JPEG and shrinks them to 1024 px, then shows them to Claude for the brief, the spec and the build. Generated code refers to each photo by a placeholder (`ORBIT_IMAGE_1`), which is swapped for the real image afterwards, so the published page is self-contained and edits never send base64 back to Claude. Converted photos are cached in `data/images/` (gitignored).
 
 ### Safety

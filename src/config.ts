@@ -76,6 +76,11 @@ const env = z
     // Longest a build may take before it's abandoned, in seconds.
     ORBIT_BUILD_TIMEOUT_S: z.coerce.number().int().min(30).default(420),
     ORBIT_FILE: z.string().default("data/orbit.json"),
+    // Repo mode: paste a GitHub link and Ensemble works on that repo in a Daytona sandbox.
+    // A fine-grained token with Contents and Pull requests (read and write) on the repos you'll use.
+    // Without one, public repos can still be cloned, read and changed, but nothing is pushed.
+    GITHUB_TOKEN: optional,
+    ORBIT_REPO_TIMEOUT_S: z.coerce.number().int().min(60).default(900),
     // Every app's HTML, one folder per version (also what the local host serves).
     ORBIT_APPS_DIR: z.string().default("data/apps"),
     // Base URL for links when ORBIT_HOST=local, e.g. http://10.0.0.5:8788 to open them on a phone on the same Wi-Fi.

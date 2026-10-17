@@ -6,11 +6,14 @@ import type { GroupRegistry } from "../photon/groups";
 import { writeBrief } from "./brief";
 import { generateApp } from "./builder";
 import { writeSpec } from "./spec";
+import { findRepoUrl } from "./github";
+import type { ChangeResult, RepoWorker } from "./repo";
+import { writeRepoPlan } from "./repoPlan";
 import { DaytonaHost, type AppHost } from "./hosts";
 import { inlineImages, readCachedImage, stripImages, type ChatImage } from "./images";
 import type { LlmImage } from "../agent/llm";
 import { checkApp } from "./quality";
-import type { OrbitChat, OrbitStore, PendingBuild, Project, ProjectImage, Version } from "./store";
+import type { OrbitChat, OrbitStore, PendingBuild, PendingRepoTask, Project, ProjectImage, Version } from "./store";
 
 export type OrbitCommand =
   | { kind: "ship" }
@@ -39,6 +42,7 @@ export function parseOrbitCommand(body: string): OrbitCommand {
 export interface OrbitSteps {
   writeBrief: typeof writeBrief;
   writeSpec: typeof writeSpec;
+  writeRepoPlan: typeof writeRepoPlan;
   generateApp: typeof generateApp;
   checkApp: typeof checkApp;
 }
@@ -85,8 +89,10 @@ export class OrbitService {
     private readonly roster: Member[],
     private readonly groups: GroupRegistry,
     steps: Partial<OrbitSteps> = {},
+    /** Repo mode (clone, change, PR, rollback). Needs Daytona; off without it. */
+    private readonly repos?: Pick<RepoWorker, "attach" | "ask" | "change" | "rollback">,
   ) {
-    this.steps = { writeBrief, writeSpec, generateApp, checkApp, ...steps };
+    this.steps = { writeBrief, writeSpec, writeRepoPlan, generateApp, checkApp, ...steps };
   }
 
   /** Only roster numbers (ORBIT_ALLOWED, else members.json and the signup groups) can start builds. */
@@ -97,7 +103,8 @@ export class OrbitService {
   }
 
   hasPending(chatId: string): boolean {
-    return !!this.store.chat(chatId).pending;
+    const chat = this.store.chat(chatId);
+    return !!chat.pending || !!chat.pendingRepo;
   }
 
   /** Handle one message aimed at Orbit. Builds run in the background; this returns once the first reply is out. */
@@ -118,12 +125,19 @@ export class OrbitService {
             `I'm ${n}. Tell me what to build and I'll make it and send you a link, like "@${n} make flappy bird with a cat and neon colors".`,
             `I'll write up the plan first; reply "ship it" to build it. After that, ask for changes ("@${n} make it faster") and I'll post a new version.`,
             `"@${n} versions" lists every link. "@${n} cancel" drops a plan I haven't built.`,
+            `To work on code instead, paste a GitHub link: "@${n} work on github.com/you/repo". I'll clone it, make changes on their own branches and open pull requests.`,
           ].join("\n\n"),
           "help",
         );
         return;
 
       case "versions": {
+        if (chat.repo) {
+          const r = chat.repo;
+          const branches = r.branches.map((b) => `${b.title}: ${b.name}${b.prUrl ? ` ${b.prUrl}` : ""} (${b.commits.length} commit${b.commits.length === 1 ? "" : "s"})`);
+          await turn.say(branches.length > 0 ? `${r.owner}/${r.name}\n${branches.join("\n")}` : `No branches on ${r.owner}/${r.name} yet. Ask me for a change.`, "versions");
+          return;
+        }
         const lines = chat.projects.flatMap((p) =>
           p.versions.filter((v) => v.status === "live").map((v) => `${p.title} v${v.n}: ${v.url}`),
         );
@@ -132,11 +146,12 @@ export class OrbitService {
       }
 
       case "cancel":
-        if (!chat.pending) {
+        if (!chat.pending && !chat.pendingRepo) {
           await turn.say("There's nothing waiting to build.", "cancel");
           return;
         }
         delete chat.pending;
+        delete chat.pendingRepo;
         this.specJobs.delete(turn.chatId);
         this.store.save();
         await turn.say("Okay, scrapped that plan.", "cancel");
@@ -144,7 +159,11 @@ export class OrbitService {
 
       case "ship":
         if (chat.building) {
-          await turn.say(`Still building v${chat.building.version} of ${chat.building.projectTitle}. I'll post the link here.`, "busy");
+          await turn.say(`Still working on ${chat.building.label}. I'll post here when it's done.`, "busy");
+          return;
+        }
+        if (chat.pendingRepo && chat.repo) {
+          this.startRepoTask(chat, chat.pendingRepo, turn);
           return;
         }
         if (!chat.pending) {
@@ -156,7 +175,29 @@ export class OrbitService {
 
       case "request": {
         if (chat.building) {
-          await turn.say(`I'm still building v${chat.building.version} of ${chat.building.projectTitle}. Ask again once the link is up.`, "busy");
+          await turn.say(`I'm still working on ${chat.building.label}. Ask again once it's done.`, "busy");
+          return;
+        }
+        const ref = findRepoUrl(cmd.text);
+        if (ref) {
+          if (!this.repos) {
+            await turn.say(`Working on GitHub repos needs a Daytona sandbox, and there's no DAYTONA_API_KEY set.`, "repo");
+            return;
+          }
+          const worker = this.repos;
+          this.startJob(chat, `cloning ${ref.owner}/${ref.name}`, turn, `clone:${ref.owner}/${ref.name}`, async () => {
+            const repo = await worker.attach(ref);
+            chat.repo = repo;
+            delete chat.pendingRepo;
+            this.store.save();
+            const push = repo.canPush ? "" : "\n\nThere's no GitHub token that can push here, so changes will stay in the sandbox (no branches pushed or pull requests opened).";
+            return `Cloned ${repo.owner}/${repo.name} (${repo.defaultBranch}). ${repo.summary}\n\nAsk me for a change, like "@${n} add a dark mode toggle", or anything about the code or its history.${push}`;
+          });
+          await turn.say(`Cloning ${ref.owner}/${ref.name} into a sandbox and reading through it. This takes a minute or two.`, "cloning");
+          return;
+        }
+        if (chat.repo && this.repos) {
+          await this.repoRequest(chat, cmd.text, turn);
           return;
         }
         const current = project ? { title: project.title, brief: project.summary, version: latestLive(project)?.n ?? 0 } : undefined;
@@ -220,7 +261,7 @@ export class OrbitService {
     }
     const n = (project.versions.at(-1)?.n ?? 0) + 1;
     delete chat.pending;
-    chat.building = { projectTitle: project.title, version: n, startedAt: new Date().toISOString() };
+    chat.building = { label: `v${n} of ${project.title}`, startedAt: new Date().toISOString() };
     this.store.save();
     log.info("orbit_build_started", { chatId: chat.chatId, projectId: project.id, version: n, action: pending.action });
 
@@ -245,6 +286,93 @@ export class OrbitService {
         await turn.say(`v${n} didn't build (${short(version.error ?? "unknown error", 140)}). Try again, or describe it a different way.`, `failed:${target.id}:v${n}`);
       }
     })().catch((err) => log.error("orbit_build_crashed", err, { chatId: chat.chatId }));
+    this.running.add(job);
+    void job.finally(() => this.running.delete(job));
+  }
+
+  /** Repo mode: work out what the message wants, then answer, or post a plan that waits for "ship it". */
+  private async repoRequest(chat: OrbitChat, text: string, turn: OrbitTurn): Promise<void> {
+    const repo = chat.repo!;
+    const worker = this.repos!;
+    const plan = await this.steps.writeRepoPlan({ repo, transcript: await turn.transcript(), askedBy: turn.askedBy, request: text });
+    const branch = plan.branch ? repo.branches.find((b) => b.name === plan.branch) : repo.branches.find((b) => b.name === repo.currentBranch);
+
+    if (plan.action === "leave") {
+      delete chat.repo;
+      delete chat.pendingRepo;
+      this.store.save();
+      await turn.say(`Done with ${repo.owner}/${repo.name}. Back to building apps.`, "leave");
+      return;
+    }
+    if (plan.action === "question") {
+      this.startJob(chat, "a question about the code", turn, "answer", () => worker.ask(repo, plan.brief || text));
+      return;
+    }
+    const pending: PendingRepoTask = {
+      action: plan.action === "update" && !branch ? "change" : plan.action,
+      title: plan.title || "Update from the group chat",
+      brief: plan.brief,
+      requestedBy: turn.askedBy,
+      at: new Date().toISOString(),
+      ...(branch && plan.action !== "change" ? { branch: branch.name } : {}),
+      ...(plan.action === "rollback" ? { rollbackMode: plan.rollbackMode === "restore" ? ("restore" as const) : ("undo" as const) } : {}),
+      ...(plan.action === "rollback" && plan.rollbackCommit ? { rollbackCommit: plan.rollbackCommit } : {}),
+    };
+    chat.pendingRepo = pending;
+    this.store.save();
+    const where = pending.branch ? `${pending.branch}${branch?.prUrl ? ` (${branch.prUrl})` : ""}` : `a new branch off ${repo.defaultBranch}`;
+    let message: string;
+    if (pending.action === "rollback") {
+      const what =
+        pending.rollbackMode === "restore"
+          ? `restore the code to how it was at ${pending.rollbackCommit ?? "the latest commit"}`
+          : `undo ${pending.rollbackCommit ?? "the latest commit"}`;
+      message = `I'll ${what} on ${where}, as a new commit, so nothing is erased from the history. Reply "ship it" to go ahead.`;
+    } else {
+      message = `Here's the plan for ${repo.owner}/${repo.name}:\n\n${pending.brief}\n\nI'll do it on ${where}${repo.canPush ? " and open a pull request" : ""}. Reply "ship it" to start.`;
+    }
+    await turn.say(message, "repo-plan");
+  }
+
+  /** Run a confirmed repo change, follow-up or rollback in the background and post the result. */
+  private startRepoTask(chat: OrbitChat, task: PendingRepoTask, turn: OrbitTurn): void {
+    const repo = chat.repo!;
+    const worker = this.repos!;
+    delete chat.pendingRepo;
+    const branch = task.branch ? repo.branches.find((b) => b.name === task.branch) : undefined;
+    this.startJob(chat, task.title, turn, `repo:${task.at}`, async () => {
+      const result: ChangeResult =
+        task.action === "rollback"
+          ? await worker.rollback(repo, { mode: task.rollbackMode ?? "undo", commit: task.rollbackCommit, title: task.title, requestedBy: task.requestedBy, branch })
+          : await worker.change(repo, { brief: task.brief, title: task.title, requestedBy: task.requestedBy, branch });
+      this.store.save();
+      log.info("repo_task_finished", { chatId: chat.chatId, action: task.action, changed: result.changed, pushed: result.pushed });
+      if (!result.changed) return `I didn't end up changing anything. ${result.report}`;
+      const c = result.commit!;
+      const pr = result.pushed
+        ? `Pull request: ${result.branch.prUrl}`
+        : "Not pushed: add a GITHUB_TOKEN that can push to this repo and I'll push the branch and open a pull request.";
+      return `Done on ${result.branch.name}: ${result.stat} (commit ${c.sha}, "${c.message}").\n\n${result.report}\n\n${pr}`;
+    });
+    void turn.say(`On it: ${task.title}. I'll post here when it's done.`, `repo-start:${task.at}`);
+  }
+
+  /** Run one piece of background work for a chat (one at a time), then post what it returns, or what went wrong. */
+  private startJob(chat: OrbitChat, label: string, turn: OrbitTurn, key: string, work: () => Promise<string>): void {
+    chat.building = { label, startedAt: new Date().toISOString() };
+    this.store.save();
+    const job = (async () => {
+      let text: string;
+      try {
+        text = await work();
+      } catch (err) {
+        log.error("orbit_job_failed", err, { chatId: chat.chatId, label });
+        text = `That didn't work: ${short(err instanceof Error ? err.message : String(err), 200)}`;
+      }
+      chat.building = undefined;
+      this.store.save();
+      await turn.say(text, `done:${key}`);
+    })().catch((err) => log.error("orbit_job_crashed", err, { chatId: chat.chatId }));
     this.running.add(job);
     void job.finally(() => this.running.delete(job));
   }

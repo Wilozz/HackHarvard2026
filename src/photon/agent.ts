@@ -13,7 +13,8 @@ import { createPhotonClient, type PhotonApi, type PhotonContent, type PhotonMess
 import { GroupRegistry, type Group } from "./groups";
 import { startSignupServer } from "./signup";
 import { isApproveText, parseSplitCommand, SplitService } from "./split";
-import { createHost } from "../orbit/hosts";
+import { createHost, DaytonaHost } from "../orbit/hosts";
+import { RepoWorker } from "../orbit/repo";
 import { recentImages } from "../orbit/images";
 import { isShipIt, OrbitService } from "../orbit/service";
 import { OrbitStore } from "../orbit/store";
@@ -495,7 +496,8 @@ export async function runPhotonAgent(roster: Member[]): Promise<never> {
   });
   const groups = new GroupRegistry(config.GROUPS_FILE);
   const host = createHost();
-  const orbit = new OrbitService(new OrbitStore(), host, roster, groups);
+  const repos = host instanceof DaytonaHost ? new RepoWorker(host) : undefined;
+  const orbit = new OrbitService(new OrbitStore(), host, roster, groups, {}, repos);
   const agent = new PhotonAgent(api, roster, { groups, orbit });
   await agent.start();
   startSignupServer(api, groups, { serveApps: host.name === "local" });
