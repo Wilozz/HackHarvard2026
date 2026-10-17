@@ -53,6 +53,16 @@ iMessage runs on **Photon 2.0 beta** (the HTTP API at `api.photon.codes/v1`), no
 - It only listens on this machine. Set `SIGNUP_HOST=0.0.0.0` to open it to your network, but anyone who can reach it can make the line text any number. Photon also caps a dedicated line at 50 new contacts a day.
 - `SIGNUP_PORT=0` turns it off.
 
+The page is a React app in `web/` (Vite, Tailwind 4, shadcn components in `web/src/components/ui`). The phone field is `reui-phone-input` with a searchable country picker.
+
+```bash
+npm run web:install   # once
+npm run web:build     # writes web/dist; the signup server then serves it at /
+npm run web:dev       # hot-reload page at http://localhost:5173, forwards /api to the signup server on 8788
+```
+
+Without a build, the server falls back to the plain HTML page in `src/photon/signup-page.ts`.
+
 Setup details, IDs and known issues are in [docs/photon-setup.md](docs/photon-setup.md).
 
 ### Limits to know about
