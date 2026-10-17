@@ -177,7 +177,7 @@ In the group chat:
 
 **Several apps in one chat** (`src/orbit/service.ts`, segments in `data/orbit.json`): the chat is split into stretches, each tied to the app it was about. Talk after a link goes out belongs to no app until the next request; the brief step (which sees only that open stretch plus a one-line list of every app) decides whether it's a new app or a change to an existing one, including "go back to the cat game". A new app's design spec and photos come only from its own stretch, so app 2 never re-reads app 1's discussion. Edits work from that app's own code and running summary. Each brief or spec reads at most the newest 80 messages of its stretch.
 
-**Repo mode** (`src/orbit/repo.ts`, `src/orbit/github.ts`, `src/orbit/repoPlan.ts`): paste a GitHub link (`@Ensemble work on github.com/you/repo`) and Ensemble clones it into its own Daytona sandbox (Daytona's git API, full history), then Claude Code reads it and posts a summary. After that, messages about the repo are routed by a small Claude call:
+**Repo mode** (`src/orbit/repo.ts`, `src/orbit/github.ts`, `src/orbit/repoPlan.ts`): name a repo in plain text (`@Ensemble work on Wilozz/HackHarvard2026`), or say "this repository" / "your own code" for Ensemble's own repo (`ENSEMBLE_REPO`). Pasted links usually don't work: iMessage turns them into link-preview bubbles, which Photon's beta drops. Ensemble clones it into its own Daytona sandbox (Daytona's git API, full history), then Claude Code reads it and posts a summary. After that, messages about the repo are routed by a small Claude call:
 
 | Text | Ensemble does |
 |---|---|

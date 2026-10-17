@@ -80,6 +80,8 @@ const env = z
     // A fine-grained token with Contents and Pull requests (read and write) on the repos you'll use.
     // Without one, public repos can still be cloned, read and changed, but nothing is pushed.
     GITHUB_TOKEN: optional,
+    // Ensemble's own repository, for "work on your own code" / "this repository".
+    ENSEMBLE_REPO: z.string().default("https://github.com/Wilozz/HackHarvard2026"),
     ORBIT_REPO_TIMEOUT_S: z.coerce.number().int().min(60).default(900),
     // Every app's HTML, one folder per version (also what the local host serves).
     ORBIT_APPS_DIR: z.string().default("data/apps"),

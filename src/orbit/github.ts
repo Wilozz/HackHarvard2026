@@ -8,6 +8,14 @@ export interface RepoRef {
   url: string;
 }
 
+/** "owner/name" (or a github.com link) → a RepoRef, or undefined if it doesn't look like one. */
+export function parseRepo(text: string): RepoRef | undefined {
+  const link = findRepoUrl(text);
+  if (link) return link;
+  const m = text.trim().match(/^([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})$/);
+  return m ? { owner: m[1]!, name: m[2]!.replace(/\.git$/i, ""), url: `https://github.com/${m[1]}/${m[2]!.replace(/\.git$/i, "")}` } : undefined;
+}
+
 /** The first github.com repository link in a message, if any. */
 export function findRepoUrl(text: string): RepoRef | undefined {
   const m = text.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})/i);
