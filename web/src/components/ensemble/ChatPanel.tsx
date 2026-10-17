@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, Mic, Plus, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { OrbitMark } from "./OrbitLogo";
+import { EnsembleMark } from "./EnsembleLogo";
 import { people, type Speaker } from "./script";
 
 export interface ChatMessage {
@@ -13,10 +13,10 @@ export interface ChatMessage {
 }
 
 function Avatar({ who, className }: { who: Speaker; className?: string }) {
-  if (who === "orbit") {
+  if (who === "ensemble") {
     return (
       <span className={cn("grid size-7 shrink-0 place-items-center rounded-full bg-[#0f1a30] ring-1 ring-white/10", className)}>
-        <OrbitMark className="size-6 text-[#8daaff]" />
+        <EnsembleMark className="size-6 text-[#8daaff]" />
       </span>
     );
   }
@@ -39,7 +39,7 @@ function LinkCard() {
       </div>
       <div className="px-3 py-2">
         <p className="text-[13px] font-semibold">Connect Four</p>
-        <p className="text-[11px] text-muted-foreground">orbit.app</p>
+        <p className="text-[11px] text-muted-foreground">ensemble.app</p>
       </div>
     </div>
   );
@@ -81,7 +81,7 @@ export function ChatPanel({ messages, typing, onReplay, className }: ChatPanelPr
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, typing]);
 
-  const members: Speaker[] = ["maya", "jordan", "orbit", "priya"];
+  const members: Speaker[] = ["maya", "jordan", "ensemble", "priya"];
   return (
     <div className={cn("flex flex-col overflow-hidden rounded-[30px] border bg-card/85 shadow-[0_30px_120px_-30px_rgba(24,60,115,0.45)] backdrop-blur-xl", className)}>
       <div className="relative flex flex-col items-center gap-1 border-b px-4 pt-3 pb-2.5">
@@ -99,7 +99,7 @@ export function ChatPanel({ messages, typing, onReplay, className }: ChatPanelPr
           ))}
         </div>
         <p className="text-[13px] font-semibold">Game night 🎲</p>
-        <p className="-mt-1 text-[11px] text-muted-foreground">You, Maya, Jordan, Priya & Orbit</p>
+        <p className="-mt-1 text-[11px] text-muted-foreground">You, Maya, Jordan, Priya & Ensemble</p>
       </div>
 
       <div ref={list} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4 [scrollbar-width:none]">
