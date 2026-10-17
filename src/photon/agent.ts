@@ -15,7 +15,7 @@ import { startSignupServer } from "./signup";
 import { isApproveText, parseSplitCommand, SplitService } from "./split";
 import { createHost, DaytonaHost } from "../orbit/hosts";
 import { RepoWorker } from "../orbit/repo";
-import { recentImages } from "../orbit/images";
+import { imagesIn, inRanges } from "../orbit/images";
 import { isShipIt, OrbitService } from "../orbit/service";
 import { OrbitStore } from "../orbit/store";
 
@@ -25,6 +25,8 @@ const LOOKBACK_MS = 10_000;
 const MAX_TRANSCRIPT_MESSAGES = 2000;
 /** A 202 from Photon only means accepted; check the real status this long after sending. */
 const DELIVERY_CHECK_MS = 20_000;
+/** Most messages an app's brief or spec reads from its part of the chat. */
+const ORBIT_CONTEXT_MESSAGES = 80;
 /** Messages per database write during the startup backfill. */
 const BACKFILL_BATCH = 500;
 
@@ -294,14 +296,22 @@ export class PhotonAgent {
           body,
           askedBy: this.nameOf(m.sentBy),
           senderHandle: m.sentBy.handle,
-          transcript: () => this.chatContext(chatId, body, all, this.chatSpaces(m.space.id, replySpace)).catch(() => ""),
-          // The whole chat straight from Photon (minus anything forgotten); memory's retrieval if Photon couldn't list it.
-          fullTranscript: async () =>
+          at: m.createdAt,
+          // Just the requested stretches of the chat, straight from Photon (minus anything forgotten), newest messages kept.
+          // If Photon couldn't list the chat, memory's retrieval for this request stands in.
+          context: async (ranges) =>
             all
-              ? this.transcript(all, this.chatSpaces(m.space.id, replySpace), this.forgotten.get(chatId))
+              ? this.transcript(
+                  all.filter((x) => inRanges(x.createdAt, ranges) && Date.parse(x.createdAt) <= Date.parse(m.createdAt)),
+                  this.chatSpaces(m.space.id, replySpace),
+                  this.forgotten.get(chatId),
+                  ORBIT_CONTEXT_MESSAGES,
+                )
               : this.chatContext(chatId, body, all, this.chatSpaces(m.space.id, replySpace)).catch(() => ""),
-          images: async () =>
-            all ? recentImages({ api: this.api, all, spaceIds: this.chatSpaces(m.space.id, replySpace), upTo: m, nameOf: (x) => this.nameOf(x.sentBy) }) : [],
+          photos: async (ranges) =>
+            all
+              ? imagesIn({ api: this.api, all, spaceIds: this.chatSpaces(m.space.id, replySpace), ranges, upTo: m, nameOf: (x: PhotonMessage) => this.nameOf(x.sentBy) })
+              : [],
           say: (text, key) => this.send(m, chatId, senderId, replySpace, text, `orbit:${m.id}:${key}`),
         });
       } catch (err) {
@@ -358,7 +368,7 @@ export class PhotonAgent {
     await this.send(m, chatId, senderId, replySpace, reply);
   }
 
-  private async send(m: PhotonMessage, chatId: string, senderId: string, replySpace: string, text: string, key = `reply:${m.id}`): Promise<void> {
+  private async send(m: PhotonMessage, chatId: string, senderId: string, replySpace: string, text: string, key = `reply:${m.id}`): Promise<string> {
     // No parentMessageId: Photon rejects threaded replies on our iMessage
     // Spaces (409 SPACE_NOT_SENDABLE "Replies are not supported for this Space").
     const sent = await this.api.sendText({
@@ -379,6 +389,7 @@ export class PhotonAgent {
       .store([{ id: sent.id, chatId, sender: undefined, senderName: config.AGENT_NAME, body: text, sentAt: new Date(sent.createdAt), isAgent: true }])
       .catch((err) => log.error("photon_store_reply_failed", err, { replyId: sent.id }));
     this.checkDelivery(sent.id);
+    return sent.createdAt;
   }
 
   /**
@@ -447,7 +458,7 @@ export class PhotonAgent {
    * fallback when memory is down). Failed sends never reached the chat, so
    * they're left out, and so is anything from before a "forget".
    */
-  private transcript(all: PhotonMessage[], spaceIds: Set<string>, forgottenAt?: Date): string {
+  private transcript(all: PhotonMessage[], spaceIds: Set<string>, forgottenAt?: Date, limit = MAX_TRANSCRIPT_MESSAGES): string {
     const lines: string[] = [];
     for (const m of all) {
       if (!spaceIds.has(m.space.id) || m.status === "failed") continue;
@@ -456,7 +467,7 @@ export class PhotonAgent {
       const body = messageText(m.content);
       if (body) lines.push(transcriptLine({ id: m.id, senderName: this.nameOf(m.sentBy), body, sentAt }, config.TRIP_TIMEZONE));
     }
-    return lines.slice(-MAX_TRANSCRIPT_MESSAGES).join("\n");
+    return lines.slice(-limit).join("\n");
   }
 
   private nameOf(user: PhotonUser): string {

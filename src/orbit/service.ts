@@ -13,7 +13,7 @@ import { DaytonaHost, type AppHost } from "./hosts";
 import { inlineImages, readCachedImage, stripImages, type ChatImage } from "./images";
 import type { LlmImage } from "../agent/llm";
 import { checkApp } from "./quality";
-import type { OrbitChat, OrbitStore, PendingBuild, PendingRepoTask, Project, ProjectImage, Version } from "./store";
+import type { ChatRange, OrbitChat, OrbitStore, PendingBuild, PendingRepoTask, Project, ProjectImage, Segment, Version } from "./store";
 
 export type OrbitCommand =
   | { kind: "ship" }
@@ -54,14 +54,14 @@ export interface OrbitTurn {
   askedBy: string;
   /** Photon's handle for the sender: who's allowed is decided by this, never by the text. */
   senderHandle: string;
-  /** Recent chat as transcript lines, fetched only when a brief needs it. */
-  transcript: () => Promise<string>;
-  /** The whole chat, oldest first, for the design spec. */
-  fullTranscript: () => Promise<string>;
-  /** Photos sent in the chat recently (downloaded and converted to JPEG). */
-  images: () => Promise<ChatImage[]>;
-  /** Post a message in the chat. `key` makes the send idempotent. */
-  say: (text: string, key: string) => Promise<void>;
+  /** When the message being handled was sent. */
+  at: string;
+  /** The chat within these ranges as transcript lines (the newest messages, capped). */
+  context: (ranges: ChatRange[]) => Promise<string>;
+  /** Photos sent within these ranges (downloaded and converted to JPEG). */
+  photos: (ranges: ChatRange[]) => Promise<ChatImage[]>;
+  /** Post a message in the chat. `key` makes the send idempotent. Resolves to Photon's timestamp for it, when known. */
+  say: (text: string, key: string) => Promise<string | void>;
 }
 
 /** At most n characters, cut at a word boundary. Only for internal text and error notes; replies to people are sent whole. */
@@ -200,28 +200,36 @@ export class OrbitService {
           await this.repoRequest(chat, cmd.text, turn);
           return;
         }
-        const current = project ? { title: project.title, brief: project.summary, version: latestLive(project)?.n ?? 0 } : undefined;
-        const photos = await turn.images().catch((err) => {
+        // Only what's being talked about now (since the last link went out), plus a one-line list of every app,
+        // so an old app's discussion is never re-read and "go back to the cat game" still finds the right one.
+        const open = openRange(chat);
+        const photos = await turn.photos([open]).catch((err) => {
           log.error("orbit_images_failed", err, { chatId: turn.chatId });
           return [] as ChatImage[];
         });
+        const apps = chat.projects
+          .filter((p) => latestLive(p))
+          .map((p) => ({ id: p.id, title: p.title, summary: p.summary, version: latestLive(p)!.n, current: p.id === chat.currentProjectId }));
         const brief = await this.steps.writeBrief({
-          transcript: await turn.transcript(),
+          transcript: await turn.context([open]),
           askedBy: turn.askedBy,
           request: cmd.text,
-          current,
+          apps,
           images: photos.map((p) => ({ label: `Photo sent by ${p.sentBy}:`, data: p.data })),
         });
+        const target = brief.action === "edit" ? chat.projects.find((p) => p.id === brief.projectId) : undefined;
         if (brief.action === "reply") {
           await turn.say(brief.reply || `Tell me what to build, like "@${n} make snake with emoji".`, "reply");
           return;
         }
         const pending: PendingBuild = {
           action: brief.action,
-          title: brief.title || project?.title || "Untitled app",
+          ...(target ? { projectId: target.id } : {}),
+          title: (target?.title ?? brief.title) || "Untitled app",
           brief: brief.brief,
           requestedBy: turn.askedBy,
           at: new Date().toISOString(),
+          requestAt: turn.at,
           ...(photos.length > 0 ? { images: photos.map((p) => ({ id: p.id, sentBy: p.sentBy })) } : {}),
         };
         if (pending.action === "edit" && !config.ORBIT_CONFIRM_EDITS) {
@@ -233,11 +241,12 @@ export class OrbitService {
         // Start the design spec now, so it's usually ready by the time someone says "ship it".
         if (pending.action === "build" && config.ORBIT_SPEC) {
           const images = numbered(cachedOnly(pending.images ?? []));
-          const spec = turn.fullTranscript().then((transcript) => this.steps.writeSpec({ title: pending.title, brief: pending.brief, transcript, images }));
+          // A new app's part of the chat is what's open now; that's all its spec reads.
+          const spec = turn.context([open]).then((transcript) => this.steps.writeSpec({ title: pending.title, brief: pending.brief, transcript, images }));
           spec.catch(() => undefined); // a failure is retried at build time
           this.specJobs.set(turn.chatId, { pending, spec });
         }
-        const next = pending.action === "edit" && project ? `v${(project.versions.at(-1)?.n ?? 0) + 1} of ${project.title}` : `${pending.title} (v1)`;
+        const next = pending.action === "edit" && target ? `v${(target.versions.at(-1)?.n ?? 0) + 1} of ${target.title}` : `${pending.title} (v1)`;
         await turn.say(`Here's the plan for ${next}:\n\n${pending.brief}\n\nReply "ship it" to build it, or tell me what to change.`, "plan");
         return;
       }
@@ -246,7 +255,7 @@ export class OrbitService {
 
   /** Kick off a build without blocking the chat. The link (or the error) is posted when it's done. */
   private startBuild(chat: OrbitChat, pending: PendingBuild, turn: OrbitTurn): void {
-    let project = pending.action === "edit" ? this.store.current(chat) : undefined;
+    let project = pending.action === "edit" ? (chat.projects.find((p) => p.id === pending.projectId) ?? this.store.current(chat)) : undefined;
     if (!project) {
       project = {
         id: randomBytes(4).toString("hex"),
@@ -257,8 +266,9 @@ export class OrbitService {
         versions: [],
       };
       chat.projects.push(project);
-      chat.currentProjectId = project.id;
     }
+    chat.currentProjectId = project.id;
+    focus(chat, project.id, pending.requestAt ?? new Date().toISOString());
     const n = (project.versions.at(-1)?.n ?? 0) + 1;
     delete chat.pending;
     chat.building = { label: `v${n} of ${project.title}`, startedAt: new Date().toISOString() };
@@ -273,7 +283,7 @@ export class OrbitService {
       );
       const early = this.specJobs.get(chat.chatId);
       this.specJobs.delete(chat.chatId);
-      const version = await this.build(target, n, pending, turn, early?.pending === pending ? early.spec : undefined);
+      const version = await this.build(target, n, pending, turn, rangesFor(chat, target.id), early?.pending === pending ? early.spec : undefined);
       chat.building = undefined;
       target.versions.push(version);
       if (version.status === "live" && pending.action === "edit") target.summary = trimSummary(`${target.summary} Then: ${pending.brief}`);
@@ -281,7 +291,11 @@ export class OrbitService {
       log.info("orbit_build_finished", { chatId: chat.chatId, projectId: target.id, version: n, status: version.status, ms: version.buildMs });
       if (version.status === "live") {
         const tip = n === 1 ? `\n\nWant changes? "@${config.AGENT_NAME} make it faster" and I'll post v2.` : "";
-        await turn.say(`v${n} of ${target.title} is live: ${version.url}${tip}`, `live:${target.id}:v${n}`);
+        const liveAt = await turn.say(`v${n} of ${target.title} is live: ${version.url}${tip}`, `live:${target.id}:v${n}`);
+        // Talk after the link goes out isn't tied to an app until the next request says which. Photon's own
+        // timestamp for the link marks the boundary, so it lines up with the messages' timestamps.
+        release(chat, liveAt || new Date().toISOString());
+        this.store.save();
       } else {
         await turn.say(`v${n} didn't build (${short(version.error ?? "unknown error", 140)}). Try again, or describe it a different way.`, `failed:${target.id}:v${n}`);
       }
@@ -294,7 +308,7 @@ export class OrbitService {
   private async repoRequest(chat: OrbitChat, text: string, turn: OrbitTurn): Promise<void> {
     const repo = chat.repo!;
     const worker = this.repos!;
-    const plan = await this.steps.writeRepoPlan({ repo, transcript: await turn.transcript(), askedBy: turn.askedBy, request: text });
+    const plan = await this.steps.writeRepoPlan({ repo, transcript: await turn.context([openRange(chat)]), askedBy: turn.askedBy, request: text });
     const branch = plan.branch ? repo.branches.find((b) => b.name === plan.branch) : repo.branches.find((b) => b.name === repo.currentBranch);
 
     if (plan.action === "leave") {
@@ -383,7 +397,7 @@ export class OrbitService {
   }
 
   /** Write, publish and check one version. Never throws: failures come back as a failed version. */
-  private async build(project: Project, n: number, pending: PendingBuild, turn: OrbitTurn, earlySpec?: Promise<string>): Promise<Version> {
+  private async build(project: Project, n: number, pending: PendingBuild, turn: OrbitTurn, ranges: ChatRange[], earlySpec?: Promise<string>): Promise<Version> {
     const started = Date.now();
     const version: Version = { n, brief: pending.brief, requestedBy: pending.requestedBy, at: new Date().toISOString(), status: "failed" };
     const previous = latestLive(project);
@@ -409,7 +423,7 @@ export class OrbitService {
           if (!previousHtml && config.ORBIT_SPEC) {
             const specStarted = Date.now();
             spec = await (earlySpec ?? Promise.reject(new Error("no early spec"))).catch(async () =>
-              this.steps.writeSpec({ title: project.title, brief: pending.brief, transcript: await turn.fullTranscript(), images }),
+              this.steps.writeSpec({ title: project.title, brief: pending.brief, transcript: await turn.context(ranges), images }),
             );
             this.store.writeFile(project.id, n, "SPEC.md", spec);
             version.specMs = Date.now() - specStarted;
@@ -468,6 +482,33 @@ export class OrbitService {
     if (sandboxId) project.sandboxId = sandboxId;
     return url;
   }
+}
+
+const EPOCH = new Date(0).toISOString();
+
+/** What's being talked about now: from the start of the latest segment (the whole chat before the first app). */
+export function openRange(chat: OrbitChat): ChatRange {
+  return { from: chat.segments?.at(-1)?.from ?? EPOCH };
+}
+
+/** Every stretch of the chat tied to this app. */
+export function rangesFor(chat: OrbitChat, projectId: string): ChatRange[] {
+  const segs = chat.segments ?? [];
+  return segs.flatMap((s, i) => (s.projectId === projectId ? [{ from: s.from, ...(segs[i + 1] ? { to: segs[i + 1]!.from } : {}) }] : []));
+}
+
+/** Tie the talk going on now to an app: claim the open segment, or start a new one at the request if the chat was on another app. */
+export function focus(chat: OrbitChat, projectId: string, at: string): void {
+  const segs: Segment[] = (chat.segments ??= []);
+  const last = segs.at(-1);
+  if (!last) segs.push({ projectId, from: EPOCH });
+  else if (last.projectId === null) last.projectId = projectId;
+  else if (last.projectId !== projectId) segs.push({ projectId, from: at });
+}
+
+/** After a link goes out, later talk belongs to no app until the next request. */
+export function release(chat: OrbitChat, at: string): void {
+  (chat.segments ??= []).push({ projectId: null, from: at });
 }
 
 /** Keep the app's running summary under 2,000 characters: the original description and the newest changes, not the middle. */

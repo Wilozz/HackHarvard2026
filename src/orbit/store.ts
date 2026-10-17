@@ -40,6 +40,10 @@ export interface Project {
 
 export interface PendingBuild {
   action: "build" | "edit";
+  /** For edits: which app. Defaults to the current one. */
+  projectId?: string;
+  /** When the request was sent, to tie the chat around it to the app. */
+  requestAt?: string;
   /** The app's photos for this build: the project's existing ones first, then new ones. */
   images?: ProjectImage[];
   title: string;
@@ -60,9 +64,27 @@ export interface PendingRepoTask {
   rollbackCommit?: string;
 }
 
+/**
+ * One stretch of the chat and the app it was about. A segment runs until the
+ * next one starts. projectId null means not yet tied to an app (talk since
+ * the last link went out); the next request ties it to a new or existing app.
+ */
+export interface Segment {
+  projectId: string | null;
+  from: string;
+}
+
+/** A time range of the chat, [from, to). No `to` means up to now. */
+export interface ChatRange {
+  from: string;
+  to?: string;
+}
+
 export interface OrbitChat {
   chatId: string;
   projects: Project[];
+  /** The chat's timeline, oldest first. Decides which messages each app sees. */
+  segments?: Segment[];
   currentProjectId?: string;
   pending?: PendingBuild;
   /** Whatever is running for this chat (a build or a repo task). One at a time. */
