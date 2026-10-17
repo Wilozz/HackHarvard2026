@@ -7,11 +7,12 @@ import type { GameConfig } from "./connect-four";
 export type Speaker = "you" | "maya" | "jordan" | "priya" | "ensemble";
 
 export const people: Record<Speaker, { name: string; color: string }> = {
-  you: { name: "You", color: "#0a84ff" },
-  maya: { name: "Maya", color: "#ec4899" },
-  jordan: { name: "Jordan", color: "#f59e0b" },
-  priya: { name: "Priya", color: "#8b5cf6" },
-  ensemble: { name: "Ensemble", color: "#4f7bf0" },
+  // Light-blue tints with navy initials, to stay inside the navy / light-blue theme.
+  you: { name: "You", color: "#cfe0ff" },
+  maya: { name: "Maya", color: "#a9c7ff" },
+  jordan: { name: "Jordan", color: "#d7e5ff" },
+  priya: { name: "Priya", color: "#8fb2f5" },
+  ensemble: { name: "Ensemble", color: "#cfe0ff" },
 };
 
 export type Step =
@@ -53,7 +54,7 @@ export const firstVersion: GameConfig = {
   rows: 6,
   colors: ["#ef4444", "#facc15"],
   names: ["Red", "Yellow"],
-  board: "#2f5bd8",
+  board: "#1d3a7a",
   winGlow: false,
 };
 
@@ -83,7 +84,7 @@ export const script: Step[] = [
   { t: "say", who: "jordan", text: "make the board bigger, like 8×7" },
   { t: "typing", who: "ensemble", ms: 800 },
   { t: "view", open: true },
-  { t: "apply", patch: { cols: 8, rows: 7, board: "#3b4fd9" }, title: "Bigger board, 8×7", by: "Jordan" },
+  { t: "apply", patch: { cols: 8, rows: 7, board: "#22448c" }, title: "Bigger board, 8×7", by: "Jordan" },
   { t: "wait", ms: 1900 },
   { t: "view", open: false },
   { t: "say", who: "ensemble", text: "Bigger board, now 8×7." },

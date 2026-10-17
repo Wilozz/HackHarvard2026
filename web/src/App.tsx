@@ -83,7 +83,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <Hero onStart={toSignup} />
     <section id="signup" className="mx-auto w-full max-w-xl scroll-mt-6 px-4 pt-6 pb-24 sm:pt-10">
-      <p className="mb-4 text-xs font-medium tracking-[0.36em] text-primary uppercase dark:text-[#8daaff]">Get started</p>
+      <p className="mb-4 text-xs font-medium tracking-[0.36em] text-primary uppercase">Get started</p>
       <h2 className="mb-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Start your group chat</h2>
       <p className="mb-8 text-muted-foreground sm:text-lg">
         Add everyone who's coming. {BRAND} starts an iMessage group with all of you and plans a trip that works for the whole group.

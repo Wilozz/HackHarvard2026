@@ -15,13 +15,13 @@ export interface ChatMessage {
 function Avatar({ who, className }: { who: Speaker; className?: string }) {
   if (who === "ensemble") {
     return (
-      <span className={cn("grid size-7 shrink-0 place-items-center rounded-full bg-[#0f1a30] ring-1 ring-white/10", className)}>
-        <EnsembleMark className="size-6 text-[#8daaff]" />
+      <span className={cn("grid size-7 shrink-0 place-items-center rounded-full bg-secondary", className)}>
+        <EnsembleMark className="size-[18px]" />
       </span>
     );
   }
   return (
-    <span className={cn("grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white", className)} style={{ backgroundColor: people[who].color }}>
+    <span className={cn("grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-[#0b1530]", className)} style={{ backgroundColor: people[who].color }}>
       {people[who].name[0]}
     </span>
   );
@@ -30,7 +30,7 @@ function Avatar({ who, className }: { who: Speaker; className?: string }) {
 function LinkCard() {
   return (
     <div className="w-56 overflow-hidden rounded-2xl border bg-card text-left">
-      <div className="grid h-24 place-items-center bg-gradient-to-br from-[#2f5bd8] to-[#5b7cf5]">
+      <div className="grid h-24 place-items-center bg-gradient-to-br from-[#13285a] to-[#2b4c93]">
         <div className="grid grid-cols-4 gap-1.5">
           {["#ef4444", "#facc15", "#ef4444", "#00000033", "#facc15", "#ef4444", "#facc15", "#ef4444"].map((c, i) => (
             <span key={i} className="size-4 rounded-full" style={{ backgroundColor: c }} />
@@ -84,7 +84,7 @@ export function ChatPanel({ messages, typing, className }: ChatPanelProps) {
   return (
     <div className={cn("flex flex-col overflow-hidden", className)}>
       <div className="relative flex flex-col items-center gap-1 border-b px-4 pt-3 pb-2.5">
-        <ChevronLeft className="absolute top-5 left-3 size-5 text-[#0a84ff]" aria-hidden />
+        <ChevronLeft className="absolute top-5 left-3 size-5 text-primary" aria-hidden />
         <div className="flex -space-x-2">
           {members.map((who) => (
             <Avatar key={who} who={who} className="size-8 ring-2 ring-card" />
@@ -111,7 +111,7 @@ export function ChatPanel({ messages, typing, className }: ChatPanelProps) {
                     <div
                       className={cn(
                         "rounded-[20px] px-3.5 py-2 text-[14.5px] leading-snug",
-                        mine ? "bg-[#0a84ff] text-white" : "bg-secondary text-foreground",
+                        mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
                         lastInRun && (mine ? "rounded-br-md" : "rounded-bl-md"),
                       )}
                     >
@@ -126,7 +126,7 @@ export function ChatPanel({ messages, typing, className }: ChatPanelProps) {
           {typing && (
             <motion.div key={`typing-${typing}`} layout {...bubbleIn} style={{ originX: typing === "you" ? 1 : 0, originY: 1 }} className={cn("mt-2 flex items-end gap-2", typing === "you" && "flex-row-reverse")}>
               {typing !== "you" && <Avatar who={typing} />}
-              <div className={cn("rounded-[20px] px-3 py-2", typing === "you" ? "bg-[#0a84ff]" : "bg-secondary")}>
+              <div className={cn("rounded-[20px] px-3 py-2", typing === "you" ? "bg-primary" : "bg-secondary")}>
                 <TypingDots />
               </div>
             </motion.div>

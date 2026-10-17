@@ -75,7 +75,7 @@ function Placeholder() {
   return (
     <motion.div key="empty" className="flex flex-col items-center gap-3 text-center" exit={{ opacity: 0, scale: 0.9 }}>
       <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 2.4, repeat: Infinity }}>
-        <EnsembleMark className="size-16 text-primary" />
+        <EnsembleMark className="size-16" />
       </motion.div>
       <p className="text-sm text-muted-foreground">Your group's app shows up here</p>
     </motion.div>
@@ -190,7 +190,7 @@ function Board({ config, pieces, win, onDrop }: BoardProps) {
 /** Floating white card in a corner of the stage, like the stat cards in a game lobby. */
 function StatCard({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("rounded-[22px] bg-white/90 px-4 py-3 text-[#080e2b] shadow-[0_12px_40px_-12px_rgba(20,40,120,0.35)] backdrop-blur dark:bg-white/[0.08] dark:text-foreground", className)}>
+    <div className={cn("rounded-[22px] bg-card/90 px-4 py-3 text-foreground shadow-[0_12px_40px_-12px_rgba(11,21,48,0.35)] backdrop-blur", className)}>
       {children}
     </div>
   );
@@ -216,23 +216,14 @@ export function GameStage({ phase, change, showChange, people, onReset, classNam
   const turn = turnOf(board.pieces);
   const winner = board.win ? board.pieces.find((p) => p.id === board.win![0])?.player : undefined;
   return (
-    <div className={cn("relative size-full overflow-hidden bg-[radial-gradient(ellipse_at_50%_42%,#ffffff_0%,#e6edf9_62%,#d6e0f2_100%)] dark:bg-[radial-gradient(ellipse_at_50%_42%,#22325a_0%,#15213d_60%,#0e182c_100%)]", className)}>
-      {/* Top row: app, whose turn, version */}
+    <div className={cn("relative size-full overflow-hidden bg-[radial-gradient(ellipse_at_50%_42%,#ffffff_0%,#e6efff_62%,#d5e4ff_100%)] dark:bg-[radial-gradient(ellipse_at_50%_42%,#1b2f5c_0%,#12224a_60%,#0b1530_100%)]", className)}>
+      {/* Top row: whose turn, and the version */}
       <div className="absolute inset-x-4 top-4 z-10 flex items-start justify-between gap-3 sm:inset-x-5 sm:top-5">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[#0b1220] shadow-lg">
-            <EnsembleMark className="size-7 text-[#8daaff]" />
-          </span>
-          <span className="hidden leading-tight sm:block">
-            <span className="block text-sm font-semibold">Connect Four</span>
-            <span className="block text-[11px] text-muted-foreground">ensemble.app/p/connect-four</span>
-          </span>
-        </div>
 
         <AnimatePresence>
           {phase === "ready" && (
             <motion.div
-              className="flex items-center gap-2 rounded-full bg-white/80 py-1.5 pr-1.5 pl-3 text-sm font-medium text-[#080e2b] shadow-sm backdrop-blur dark:bg-white/10 dark:text-foreground"
+              className="flex items-center gap-2 rounded-full bg-card/80 py-1.5 pr-1.5 pl-3 text-sm font-medium text-foreground shadow-sm backdrop-blur"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -246,7 +237,7 @@ export function GameStage({ phase, change, showChange, people, onReset, classNam
           )}
         </AnimatePresence>
 
-        <div className="grid size-11 shrink-0 place-items-center rounded-[14px] border-2 border-[#0b1220]/80 bg-white/70 text-sm font-bold text-[#080e2b] backdrop-blur dark:border-white/20 dark:bg-white/10 dark:text-foreground">
+        <div className="ml-auto grid size-11 shrink-0 place-items-center rounded-[14px] border-2 border-primary/70 bg-card/70 text-sm font-bold text-foreground backdrop-blur">
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.span key={change?.version ?? 0} initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -14, opacity: 0 }} transition={{ type: "spring", stiffness: 500, damping: 28 }}>
               {change ? `v${change.version}` : "–"}

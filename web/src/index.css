@@ -5,49 +5,50 @@
 
 /* shadcn tokens. --primary and --ring come from the input-form component. */
 :root {
-  /* Orbit palette, matched to the hero (orbit-delivery-hero.tsx) so the page reads as one surface. */
+  /* Ensemble palette: navy and very light blue only. Light mode is a light-blue
+     page with navy accents; dark mode is a navy page with light-blue accents. */
   --radius: 0.75rem;
-  --background: #f0f6ff;
-  --foreground: #080e2b;
+  --background: #eef4ff;
+  --foreground: #0f1d3d;
   --card: #ffffff;
-  --card-foreground: #080e2b;
+  --card-foreground: #0f1d3d;
   --popover: #ffffff;
-  --popover-foreground: #080e2b;
-  --primary: #4673eb;
-  --primary-foreground: #ffffff;
-  --secondary: #e6eefc;
-  --secondary-foreground: #080e2b;
-  --muted: #e6eefc;
-  --muted-foreground: #7a87aa;
-  --accent: #e6eefc;
-  --accent-foreground: #080e2b;
-  --destructive: #d93a3a;
+  --popover-foreground: #0f1d3d;
+  --primary: #13285a;
+  --primary-foreground: #eaf2ff;
+  --secondary: #e1ebff;
+  --secondary-foreground: #0f1d3d;
+  --muted: #e1ebff;
+  --muted-foreground: #5a6b8f;
+  --accent: #dbe7ff;
+  --accent-foreground: #0f1d3d;
+  --destructive: #c2410c;
   --destructive-foreground: #ffffff;
-  --border: #dce5fa;
-  --input: #d3dff7;
-  --ring: #4673eb;
+  --border: #d4e1fb;
+  --input: #c9d9f8;
+  --ring: #13285a;
 }
 
 .dark {
-  --background: #0f1a30;
-  --foreground: #f3f6ff;
-  --card: #15223d;
-  --card-foreground: #f3f6ff;
-  --popover: #15223d;
-  --popover-foreground: #f3f6ff;
-  --primary: #4f7bf0;
-  --primary-foreground: #ffffff;
-  --secondary: #1c2b4a;
-  --secondary-foreground: #f3f6ff;
-  --muted: #1c2b4a;
-  --muted-foreground: #b0bed9;
-  --accent: #1f3053;
-  --accent-foreground: #f3f6ff;
-  --destructive: #f87171;
-  --destructive-foreground: #ffffff;
-  --border: #233456;
-  --input: #2a3c61;
-  --ring: #8daaff;
+  --background: #0b1530;
+  --foreground: #eaf2ff;
+  --card: #111f40;
+  --card-foreground: #eaf2ff;
+  --popover: #111f40;
+  --popover-foreground: #eaf2ff;
+  --primary: #a3c2ff;
+  --primary-foreground: #0b1530;
+  --secondary: #182a52;
+  --secondary-foreground: #eaf2ff;
+  --muted: #182a52;
+  --muted-foreground: #9fb3d9;
+  --accent: #1c315e;
+  --accent-foreground: #eaf2ff;
+  --destructive: #fb923c;
+  --destructive-foreground: #0b1530;
+  --border: #1f335f;
+  --input: #2a4070;
+  --ring: #a3c2ff;
 }
 
 @theme inline {
