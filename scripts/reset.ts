@@ -1,15 +1,16 @@
 // Reset the demo. Usage:
 //   npm run reset                 → clear trip plans, votes and bank ledger (balances back to opening)
-//   npm run reset -- --chats      → also delete every stored message and chunk
-//   npm run reset -- --all        → drop every table (needed after changing the embedding model)
-import { getDb } from "../src/db";
+//   npm run reset -- --chats      → also delete every stored message and chunk ("forget" cutoffs are kept,
+//                                   so a backfill still won't restore forgotten chats)
+//   npm run reset -- --all        → drop every table, cutoffs included (needed after changing the embedding model)
+import { getDb, TABLES } from "../src/db";
 
 const all = process.argv.includes("--all");
 const chats = process.argv.includes("--chats");
 
 const db = await getDb();
 if (all) {
-  await db.exec(`drop table if exists chunks; drop table if exists messages; drop table if exists trips; drop table if exists ledger;`);
+  await db.exec(TABLES.map((t) => `drop table if exists ${t};`).join("\n"));
   console.log("Dropped all tables. They are recreated on next start.");
 } else {
   await db.exec(`delete from trips; delete from ledger;`);

@@ -39,11 +39,19 @@ The terminal UI's first chat is `terminal:chat-1`, which is what `npm run seed:c
 
 ## Going live on iMessage
 
-iMessage runs on **Photon 2.0 beta** (the HTTP API at `api.photon.codes/v1`), not Spectrum. For now it does one thing: mention `@Tripchat` in the group (or text it directly) and ask for a trip idea, and it reads the whole chat and replies with a suggestion. There's no retrieval yet; every mention re-reads the full chat from Photon. The plan → vote → book → split flow still runs only in the terminal.
+iMessage runs on **Photon 2.0 beta** (the HTTP API at `api.photon.codes/v1`), not Spectrum. Mention `@Tripchat` in the group (or text it directly) and ask for a trip idea; it replies with a suggestion built from the chat's memory. The plan → vote → book → split flow still runs only in the terminal.
+
+Memory on iMessage works like this:
+
+- **On start**, Tripchat copies every iMessage in the Photon project into the memory database (a backfill), so it knows what was said while it was off. Already-stored messages are skipped.
+- **Every new message** is saved, chunked and embedded as it arrives, and so is each of Tripchat's own replies.
+- **On a mention**, Claude gets the passages the trip template retrieves from the whole history plus the latest 20 messages, in time order, instead of the entire chat.
+- **`@Tripchat forget`** deletes that chat's memory and records a cutoff, so the next backfill doesn't bring it back. Photon itself still keeps the conversation.
+- If the database is unreachable, Tripchat falls back to reading the chat straight from Photon, so it still answers.
 
 1. Put `PHOTON_PROJECT_ID` (`pho_prj_...`) and `PHOTON_API_KEY` (`pho_sk_...`) in `.env`. Tripchat switches from the terminal to iMessage automatically.
 2. Optionally, put everyone's phone numbers in `members.json` so replies use real names instead of "Guest 1234".
-3. `npm run dev`. It polls Photon every 2 seconds and only answers messages that arrive after it starts.
+3. Set up memory (below), then `npm run dev`. It polls Photon every 2 seconds and only answers messages that arrive after it starts.
 
 ### Signup page
 
@@ -71,6 +79,26 @@ Setup details, IDs and known issues are in [docs/photon-setup.md](docs/photon-se
 - **A 202 isn't delivery.** Photon accepts a send, then delivers it later. About 20 seconds after each reply, Tripchat checks the real status and logs `photon_send_failed` with Photon's failure code if it didn't go through.
 - **Plain text only.** iMessage strips Markdown, so all replies are plain text.
 
+## Memory on Supabase
+
+Without `DATABASE_URL`, memory lives in an embedded database in `data/pglite` on whichever laptop runs the agent. To share it and keep it across machines, use Supabase:
+
+1. In Supabase, click **Connect** and copy the **Session pooler** string (host `aws-…pooler.supabase.com`, user `postgres.<project-ref>`). The Direct connection (`db.<ref>.supabase.co`) is IPv6-only and fails on most Wi-Fi.
+2. Put it in `.env` as `DATABASE_URL`, with your database password in place of `[YOUR-PASSWORD]` (no brackets).
+3. `npm run db:setup` creates everything (it's also applied on every start, and it's safe to re-run):
+   - pgvector in the `extensions` schema
+   - tables `messages`, `chunks`, `trips`, `ledger`, `forgotten_chats`
+   - an HNSW index for vector search and a GIN index for keyword search
+   - row level security on every table
+4. `npm run db:selftest` stores four messages in a scratch chat, embeds and retrieves them, then deletes them. `npm run db:check` is a read-only report of tables, row counts and which chats are indexed.
+
+Notes:
+
+- **Row level security:** Supabase exposes the `public` schema through its Data API. With RLS on and no policies, the anon and authenticated keys can't read anything. Tripchat connects as the table owner, which RLS doesn't restrict.
+- **TLS:** connections to Supabase are encrypted (Supabase also accepts plaintext, so it's turned on explicitly). The certificate chain isn't verified, because Supabase uses its own CA.
+- **Embeddings:** they're computed on the agent's machine, so Supabase stores only text and vectors. Nothing is sent to an embedding API.
+- **Switching databases:** nothing carries over between PGlite and Supabase. On iMessage, the startup backfill refills it from Photon.
+
 ## How it works
 
 **Memory.** Every message is saved raw (`messages` table), then grouped into conversation chunks: a new chunk starts after a 45-minute gap or at 15 messages, overlapping the previous chunk by 3 messages. Chunks are embedded locally with `bge-small-en-v1.5` (no API key; about 35 MB downloaded on first run) and stored in pgvector. Re-indexing is deterministic, so only new or changed chunks are re-embedded.
@@ -90,7 +118,8 @@ Setup details, IDs and known issues are in [docs/photon-setup.md](docs/photon-se
 - Chat text is passed to Claude as data inside tags, and every prompt says to ignore instructions found there.
 - The agent only dials numbers on `CALL_ALLOWLIST`, and every demo hotel uses `DEMO_FRONT_DESK_PHONE`.
 - Bank moves are idempotent (`ledger` has one row per transfer leg), so a retry never pays twice.
-- `@Tripchat forget` deletes the chat's messages, chunks and trip state.
+- `@Tripchat forget` deletes the chat's messages, chunks and trip state, and a later backfill won't store those messages again. On iMessage only an exact "forget" counts, since DMs need no mention.
+- Memory tables have row level security on, so Supabase's public API keys can't read them.
 - Logs carry ids only, never message text, phone numbers or keys.
 
 ## Capital One Nessie
@@ -132,6 +161,9 @@ Run the `--check` early on Friday. If the shapes differ, fix `src/bank/nessie.ts
 | `npm run seed:chat [-- chatId]` | Load `data/seed-chat.json` into a chat |
 | `npm run seed:nessie [-- --check]` | Create Nessie accounts for members |
 | `npm run reset [-- --chats \| --all]` | Clear trips and ledger (balances back to opening); `--chats` also clears messages; `--all` drops tables |
+| `npm run db:setup` | Create the memory schema in `DATABASE_URL` (idempotent) |
+| `npm run db:check` | Read-only report: pgvector, tables, RLS, row counts, indexed chats |
+| `npm run db:selftest` | Store → embed → retrieve round trip in a scratch chat, cleaned up after |
 
 ## Configuration
 
@@ -141,7 +173,7 @@ See [.env.example](.env.example). Storage defaults to embedded PGlite in `data/p
 
 ```
 src/index.ts          Entry point: Photon on iMessage, else the Spectrum terminal chat
-src/photon/           Photon 2.0 beta client, the iMessage loop (poll, mention, full-chat suggestion), and the signup page
+src/photon/           Photon 2.0 beta client, the iMessage loop (backfill, poll, store, retrieve, reply), and the signup page
 src/agent/handler.ts  The trip state machine: plan → vote → book → split (terminal)
 src/agent/            commands parser, Claude calls (suggest, extract, planner, answer)
 src/memory/           chunking, local embeddings, ingestion, retrieval

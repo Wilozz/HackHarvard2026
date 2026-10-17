@@ -41,7 +41,12 @@ export function embedPassages(texts: string[]): Promise<number[][]> {
 }
 
 export async function embedQuery(text: string): Promise<number[]> {
-  const [row] = await embed([QUERY_PREFIX + text]);
+  const [row] = await embedQueries([text]);
   if (!row) throw new Error("embedding returned no rows");
   return row;
+}
+
+/** Several queries in one model call, in input order. */
+export function embedQueries(texts: string[]): Promise<number[][]> {
+  return embed(texts.map((t) => QUERY_PREFIX + t));
 }

@@ -1,13 +1,23 @@
-// The Photon 2.0 beta loop against an in-memory fake of the API. Claude is stubbed.
+// The Photon 2.0 beta loop against an in-memory fake of the API and a real
+// in-memory memory database (PGlite + pgvector, local embeddings). Claude is stubbed.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-Object.assign(process.env, { PLATFORM: "terminal", PHOTON_AGENT_USER_ID: "", AGENT_NAME: "Tripchat" });
+Object.assign(process.env, {
+  PLATFORM: "terminal",
+  PHOTON_AGENT_USER_ID: "",
+  AGENT_NAME: "Tripchat",
+  PGLITE_DIR: "memory://",
+  DATABASE_URL: "",
+  DEBUG_PORT: "0",
+});
 
-const { PhotonAgent, messageText } = await import("../src/photon/agent");
+const { PhotonAgent, messageText, isForgetCommand } = await import("../src/photon/agent");
+const { getDb, TABLES } = await import("../src/db");
 const { GroupRegistry } = await import("../src/photon/groups");
 const { createGroupChat, normalizePhone, parseSignup } = await import("../src/photon/signup");
 type PhotonApi = import("../src/photon/api").PhotonApi;
+type PhotonMemory = import("../src/photon/agent").PhotonMemory;
 type PhotonMessage = import("../src/photon/api").PhotonMessage;
 type SendTextArgs = import("../src/photon/api").SendTextArgs;
 type ListMessagesQuery = import("../src/photon/api").ListMessagesQuery;
@@ -92,12 +102,25 @@ const roster = [
   { name: "Harsh", handles: [HARSH.handle], startBalance: 1500 },
 ];
 
-function setup(
-  reply: (args: { transcript: string; askedBy: string; request: string }) => Promise<string>,
-  opts: { replySpaces?: Map<string, string>; groups?: InstanceType<typeof GroupRegistry> } = {},
+type Call = { transcript: string; askedBy: string; request: string };
+
+/** A fresh agent over a fresh fake Photon (or the given one), with the memory tables emptied unless keepMemory. */
+async function setup(
+  reply: (args: Call) => Promise<string>,
+  opts: {
+    replySpaces?: Map<string, string>;
+    groups?: InstanceType<typeof GroupRegistry>;
+    api?: FakePhoton;
+    memory?: PhotonMemory;
+    keepMemory?: boolean;
+  } = {},
 ) {
-  const api = new FakePhoton();
-  const calls: { transcript: string; askedBy: string; request: string }[] = [];
+  if (!opts.keepMemory) {
+    const db = await getDb();
+    for (const table of TABLES) await db.exec(`delete from ${table}`);
+  }
+  const api = opts.api ?? new FakePhoton();
+  const calls: Call[] = [];
   const agent = new PhotonAgent(api, roster, {
     brain: {
       suggestTrip: async (args) => {
@@ -107,12 +130,21 @@ function setup(
     },
     replySpaces: opts.replySpaces ?? new Map(),
     groups: opts.groups ?? new GroupRegistry(),
+    memory: opts.memory,
   });
   return { api, agent, calls };
 }
 
+async function storedRows(chatId: string) {
+  const db = await getDb();
+  return db.query<{ id: string; body: string; is_agent: boolean; sender_name: string }>(
+    `select id, body, is_agent, sender_name from messages where chat_id = $1 order by sent_at, id`,
+    [chatId],
+  );
+}
+
 test("answers a mention in a group with the whole chat as context", async () => {
-  const { api, agent, calls } = setup(async () => "How about Montreal, Dec 19-22?");
+  const { api, agent, calls } = await setup(async () => "How about Montreal, Dec 19-22?");
   api.add(GROUP, HARSH, "old message from before the agent started");
   await agent.start();
 
@@ -138,7 +170,7 @@ test("answers a mention in a group with the whole chat as context", async () => 
 });
 
 test("only answers group messages that mention it, and every DM", async () => {
-  const { api, agent, calls } = setup(async () => "ok");
+  const { api, agent, calls } = await setup(async () => "ok");
   await agent.start();
 
   api.add(GROUP, MATIAS, "we should go somewhere");
@@ -153,7 +185,7 @@ test("only answers group messages that mention it, and every DM", async () => {
 });
 
 test("sends replies to the mapped Space and reads both as one chat", async () => {
-  const { api, agent, calls } = setup(async () => "Montreal?", { replySpaces: new Map([[GROUP, OTHER_GROUP]]) });
+  const { api, agent, calls } = await setup(async () => "Montreal?", { replySpaces: new Map([[GROUP, OTHER_GROUP]]) });
   api.add(OTHER_GROUP, agentUser, "Hi! Where should we go?");
   await agent.start();
 
@@ -177,7 +209,7 @@ test("replies in the signup group that matches who's talking in an unknown Space
   const member = (name: string, u: { id: string; handle: string }) => ({ name, handle: u.handle, userId: u.id });
   groups.upsert({ spaceId: OTHER_GROUP, createdAt: "2026-10-17T00:00:00Z", members: [member("Matias", MATIAS), member("Harsh", HARSH)] });
   groups.upsert({ spaceId: NEWER, createdAt: "2026-10-17T01:00:00Z", members: [member("Matias", MATIAS), member("Priya", STRANGER)] });
-  const { api, agent, calls } = setup(async () => "ok", { groups });
+  const { api, agent, calls } = await setup(async () => "ok", { groups });
   await agent.start();
 
   // Harsh and Matias are talking, so it's their group even though Matias is in a newer one too.
@@ -265,7 +297,7 @@ test("signup form cleans up numbers and explains problems", () => {
 });
 
 test("never answers the same message twice across polls", async () => {
-  const { api, agent, calls } = setup(async () => "ok");
+  const { api, agent, calls } = await setup(async () => "ok");
   await agent.start();
   api.add(GROUP, MATIAS, "@Tripchat plan something");
   await agent.poll();
@@ -276,7 +308,7 @@ test("never answers the same message twice across polls", async () => {
 });
 
 test("still replies when Claude fails", async () => {
-  const { api, agent } = setup(async () => {
+  const { api, agent } = await setup(async () => {
     throw new Error("boom");
   });
   await agent.start();
@@ -285,6 +317,108 @@ test("still replies when Claude fails", async () => {
   await agent.idle();
   assert.equal(api.sent.length, 1);
   assert.match(api.sent[0]!.text, /couldn't come up with anything/);
+});
+
+test("backfills history and saves new messages and its own replies to memory", async () => {
+  const { api, agent } = await setup(async () => "Montreal, Dec 19-22?");
+  api.add(GROUP, HARSH, "from before the agent ever ran");
+  api.add(GROUP, agentUser, "a send that failed", "failed");
+  await agent.start();
+
+  const ask = api.add(GROUP, MATIAS, "@Tripchat trip idea?");
+  await agent.poll();
+  await agent.idle();
+
+  const rows = await storedRows(`imessage:${GROUP}`);
+  assert.deepEqual(
+    rows.map((r) => [r.sender_name, r.body, r.is_agent]),
+    [
+      ["Harsh", "from before the agent ever ran", false],
+      ["Matias", "@Tripchat trip idea?", false],
+      ["Tripchat", "Montreal, Dec 19-22?", true],
+    ],
+  );
+  assert.equal(rows[1]!.id, ask.id);
+  // The retrieval behind the answer is recorded for the debug page.
+  const debug = agent.recent.get(`imessage:${GROUP}`)?.lastRetrieval ?? [];
+  assert.deepEqual(debug.map((d) => d.slot), ["availability", "destination", "budget", "lodging", "activities", "constraints", "logistics", "commitment", "request"]);
+});
+
+test("retrieves an old message that's no longer among the latest ones", async () => {
+  const { api, agent, calls } = await setup(async () => "ok");
+  api.add(GROUP, HARSH, "reminder I'm vegetarian so we need real food options");
+  for (let i = 0; i < 30; i++) api.add(GROUP, MATIAS, `random chatter ${i}`);
+  await agent.start();
+
+  api.add(GROUP, MATIAS, "@Tripchat where should we eat on the trip?");
+  await agent.poll();
+  await agent.idle();
+
+  // 32 messages, and only the latest 20 come in as "recent", so the first one is there through retrieval.
+  assert.match(calls[0]!.transcript, /Harsh: reminder I'm vegetarian/);
+});
+
+test("forget wipes this chat's memory, and a restart doesn't bring it back", async () => {
+  const { api, agent, calls } = await setup(async () => "ok");
+  api.add(GROUP, HARSH, "my budget is $300");
+  api.add(OTHER_GROUP, HARSH, "a message in another chat");
+  await agent.start();
+
+  api.add(GROUP, MATIAS, "@Tripchat forget");
+  await agent.poll();
+  await agent.idle();
+  assert.match(api.sent[0]!.text, /deleted everything I had stored from this chat/);
+  assert.equal(calls.length, 0, "forget doesn't ask Claude anything");
+
+  const humanRows = async (space: string) => (await storedRows(`imessage:${space}`)).filter((r) => !r.is_agent);
+  assert.deepEqual(await humanRows(GROUP), []);
+  assert.equal((await humanRows(OTHER_GROUP)).length, 1, "other chats are untouched");
+
+  // A restart backfills from Photon, which still has the old messages.
+  const restarted = await setup(async () => "ok", { api, keepMemory: true });
+  await restarted.agent.start();
+  assert.deepEqual(await humanRows(GROUP), []);
+
+  api.add(GROUP, HARSH, "@Tripchat what's my budget?");
+  await restarted.agent.poll();
+  await restarted.agent.idle();
+  assert.doesNotMatch(restarted.calls[0]!.transcript, /\$300/);
+});
+
+test("only an explicit forget wipes memory", () => {
+  for (const yes of ["forget", "Forget!", "forget everything", "please forget this chat", "wipe it all"]) assert.ok(isForgetCommand(yes), yes);
+  for (const no of ["delete the hotel idea", "forget about Miami, let's do Montreal", "don't forget Harsh is vegetarian", "what did we forget?"]) {
+    assert.ok(!isForgetCommand(no), no);
+  }
+});
+
+test("reads the chat from Photon when the memory database is down", async () => {
+  const down: PhotonMemory = {
+    store: async () => {
+      throw new Error("db down");
+    },
+    context: async () => {
+      throw new Error("db down");
+    },
+    forget: async () => {
+      throw new Error("db down");
+    },
+    cutoffs: async () => {
+      throw new Error("db down");
+    },
+  };
+  const { api, agent, calls } = await setup(async () => "still here", { memory: down });
+  api.add(GROUP, HARSH, "I'm free after the 18th");
+  await agent.start();
+
+  api.add(GROUP, MATIAS, "@Tripchat trip idea?");
+  await agent.poll();
+  await agent.idle();
+
+  const lines = calls[0]!.transcript.split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0]!, /\] Harsh: I'm free after the 18th$/);
+  assert.equal(api.sent[0]!.text, "still here");
 });
 
 test("messageText reads text, groups and attachments", () => {
