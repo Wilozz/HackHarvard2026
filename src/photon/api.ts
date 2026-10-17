@@ -2,13 +2,24 @@
 // Spec: https://api.photon.codes/openapi.json. This is not Spectrum: the beta
 // uses a project API key (pho_sk_...) as a Bearer token.
 
+import { randomUUID } from "node:crypto";
+import { log } from "../log";
+
 /** The parts of a Photon User snapshot Tripchat reads. */
 export interface PhotonUser {
   id: string;
   /** "agent" for the project's own lines, "human" for everyone else. */
   kind: string;
   handle: string;
+  /** On agents, type is "dedicated" or "shared". Only dedicated lines can start group chats. */
+  details?: { type?: string; resourceId?: string };
   metadata?: { displayName?: string };
+}
+
+export interface PhotonSpace {
+  id: string;
+  kind: string;
+  participantIds: string[];
 }
 
 /** Text, attachment, or a group of parts (text + attachments sent together). */
@@ -56,7 +67,12 @@ export interface PhotonApi {
   /** Every matching message, paging through nextPageToken. Stop iterating to stop fetching. */
   listMessages(query: ListMessagesQuery): AsyncIterable<PhotonMessage>;
   getMessage(id: string): Promise<PhotonMessage>;
-  listAgentUserIds(): Promise<string[]>;
+  /** The project's own Users (kind "agent"), one per line. */
+  listAgents(): Promise<PhotonUser[]>;
+  /** Create or get the iMessage User for a handle (E.164 phone number). */
+  createUser(handle: string): Promise<PhotonUser>;
+  /** Create or get the iMessage chat with exactly these Users. The first one starts it. */
+  createSpace(participantIds: string[]): Promise<PhotonSpace>;
   sendText(args: SendTextArgs): Promise<PhotonMessage>;
   setTyping(spaceId: string, senderId: string, typing: boolean): Promise<void>;
 }
@@ -112,6 +128,7 @@ export function createPhotonClient(opts: { baseUrl: string; projectId: string; a
         });
       } catch (err) {
         if (attempt >= MAX_ATTEMPTS) throw err;
+        log.warn("photon_retry", { method, path, attempt, reason: err instanceof Error ? err.name : "network" });
         await sleep(500 * 2 ** attempt);
         continue;
       }
@@ -120,6 +137,7 @@ export function createPhotonClient(opts: { baseUrl: string; projectId: string; a
 
       const wait = retryAfterMs(res.headers.get("retry-after"));
       if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
+        log.warn("photon_retry", { method, path, attempt, status: res.status });
         await sleep(Math.min(wait ?? 500 * 2 ** attempt, 30_000));
         continue;
       }
@@ -163,12 +181,21 @@ export function createPhotonClient(opts: { baseUrl: string; projectId: string; a
       return request<PhotonMessage>("GET", `/messages/${encodeURIComponent(id)}`);
     },
 
-    async listAgentUserIds() {
-      const ids: string[] = [];
+    async listAgents() {
+      const agents: PhotonUser[] = [];
       for await (const u of paginate<PhotonUser>("/users", { platform: "imessage", pageSize: "200" })) {
-        if (u.kind === "agent") ids.push(u.id);
+        if (u.kind === "agent") agents.push(u);
       }
-      return ids;
+      return agents;
+    },
+
+    // Both are create-or-get, so a fresh idempotency key per call is safe.
+    createUser(handle) {
+      return request<PhotonUser>("POST", "/users", { idempotencyKey: randomUUID(), body: { platform: "imessage", handle } });
+    },
+
+    createSpace(participantIds) {
+      return request<PhotonSpace>("POST", "/spaces", { idempotencyKey: randomUUID(), body: { platform: "imessage", participantIds } });
     },
 
     sendText(args) {

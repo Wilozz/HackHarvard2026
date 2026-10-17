@@ -4,3 +4,4 @@ members.json
 data/pglite/
 data/models/
 *.log
+data/groups.json
