@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, Mic, Plus, RotateCcw } from "lucide-react";
+import { ChevronLeft, Mic, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EnsembleMark } from "./EnsembleLogo";
 import { people, type Speaker } from "./script";
@@ -70,12 +70,11 @@ const bubbleIn = {
 interface ChatPanelProps {
   messages: ChatMessage[];
   typing: Speaker | null;
-  onReplay: () => void;
   className?: string;
 }
 
 /** The group's iMessage thread, filling in one bubble at a time. */
-export function ChatPanel({ messages, typing, onReplay, className }: ChatPanelProps) {
+export function ChatPanel({ messages, typing, className }: ChatPanelProps) {
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
@@ -83,16 +82,9 @@ export function ChatPanel({ messages, typing, onReplay, className }: ChatPanelPr
 
   const members: Speaker[] = ["maya", "jordan", "ensemble", "priya"];
   return (
-    <div className={cn("flex flex-col overflow-hidden rounded-[30px] border bg-card/85 shadow-[0_30px_120px_-30px_rgba(24,60,115,0.45)] backdrop-blur-xl", className)}>
+    <div className={cn("flex flex-col overflow-hidden", className)}>
       <div className="relative flex flex-col items-center gap-1 border-b px-4 pt-3 pb-2.5">
         <ChevronLeft className="absolute top-5 left-3 size-5 text-[#0a84ff]" aria-hidden />
-        <button
-          type="button"
-          onClick={onReplay}
-          className="absolute top-3.5 right-3 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <RotateCcw className="size-3.5" /> Replay
-        </button>
         <div className="flex -space-x-2">
           {members.map((who) => (
             <Avatar key={who} who={who} className="size-8 ring-2 ring-card" />

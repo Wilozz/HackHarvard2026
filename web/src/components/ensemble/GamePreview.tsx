@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Lock, RotateCcw, Sparkles } from "lucide-react";
+import { RotateCcw, Sparkles, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { landingRow, turnOf, type GameConfig, type Piece } from "./connect-four";
 import { EnsembleMark } from "./EnsembleLogo";
@@ -10,8 +10,6 @@ export type Phase = "empty" | "building" | "ready";
 const spring = { type: "spring", stiffness: 190, damping: 24 } as const;
 
 const codeLines = [
-  "import { useState } from 'react'",
-  "",
   "export default function ConnectFour() {",
   "  const [board, setBoard] = useState(emptyBoard(7, 6))",
   "  const [turn, setTurn] = useState<Player>('red')",
@@ -50,23 +48,22 @@ function Building() {
   return (
     <motion.div
       key="building"
-      className="flex size-full flex-col gap-4 p-6"
+      className="flex size-full max-w-lg flex-col justify-center gap-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 0.97, filter: "blur(4px)" }}
+      exit={{ opacity: 0, scale: 0.96, filter: "blur(6px)" }}
     >
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Sparkles className="size-4 text-primary" />
         Claude is writing your game…
       </div>
-      <div className="h-1 overflow-hidden rounded-full bg-muted">
-        <motion.div className="h-full rounded-full bg-primary" initial={{ width: "4%" }} animate={{ width: "100%" }} transition={{ duration: 3.3, ease: "easeInOut" }} />
+      <div className="h-1 overflow-hidden rounded-full bg-foreground/10">
+        <motion.div className="h-full rounded-full bg-primary" initial={{ width: "4%" }} animate={{ width: "100%" }} transition={{ duration: 3, ease: "easeInOut" }} />
       </div>
-      <pre className="flex-1 overflow-hidden font-mono text-[12px] leading-6 text-muted-foreground">
+      <pre className="overflow-hidden font-mono text-[12px] leading-6 text-muted-foreground">
         {codeLines.slice(0, shown).map((line, i) => (
           <motion.div key={i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}>
-            <span className="mr-4 inline-block w-5 text-right opacity-40 select-none">{i + 1}</span>
-            {line}
+            {line || " "}
           </motion.div>
         ))}
       </pre>
@@ -76,9 +73,9 @@ function Building() {
 
 function Placeholder() {
   return (
-    <motion.div key="empty" className="flex size-full flex-col items-center justify-center gap-3 text-center" exit={{ opacity: 0 }}>
+    <motion.div key="empty" className="flex flex-col items-center gap-3 text-center" exit={{ opacity: 0, scale: 0.9 }}>
       <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 2.4, repeat: Infinity }}>
-        <EnsembleMark className="size-14 text-primary" />
+        <EnsembleMark className="size-16 text-primary" />
       </motion.div>
       <p className="text-sm text-muted-foreground">Your group's app shows up here</p>
     </motion.div>
@@ -90,192 +87,215 @@ interface BoardProps {
   pieces: Piece[];
   win: number[] | null;
   onDrop: (col: number) => void;
-  onReset: () => void;
 }
 
-function Board({ config, pieces, win, onDrop, onReset }: BoardProps) {
+function Board({ config, pieces, win, onDrop }: BoardProps) {
   const [area, size] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const pad = 10;
-  const cell = Math.max(18, Math.min(62, Math.floor(Math.min((size.w - pad * 2) / config.cols, (size.h - pad * 2) / config.rows))));
+  const cell = Math.max(16, Math.min(64, Math.floor(Math.min((size.w - pad * 2) / config.cols, (size.h - pad * 2) / config.rows))));
   const width = config.cols * cell + pad * 2;
   const height = config.rows * cell + pad * 2;
   const disc = Math.round(cell * 0.8);
   const inset = (cell - disc) / 2;
   const at = (col: number, row: number) => ({ x: pad + col * cell + inset, y: pad + (config.rows - 1 - row) * cell + inset });
   const turn = turnOf(pieces);
-  const winner = win ? pieces.find((p) => p.id === win[0])?.player : undefined;
   const ghostRow = hover !== null && !win ? landingRow(pieces, hover, config.rows) : -1;
 
   return (
-    <motion.div key="board" className="flex size-full flex-col items-center gap-3 p-4 sm:p-5" initial={{ opacity: 0, scale: 0.9, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={spring}>
-      <div ref={area} className="flex min-h-0 w-full flex-1 items-center justify-center">
-        {size.w > 0 && (
-          <motion.div
-            className="relative rounded-[22px] shadow-[0_24px_60px_-20px_rgba(20,40,120,0.55),inset_0_1px_0_rgba(255,255,255,0.18)]"
-            initial={false}
-            animate={{ width, height, backgroundColor: config.board }}
-            transition={spring}
-            onMouseLeave={() => setHover(null)}
-          >
-            {/* Holes */}
-            {Array.from({ length: config.cols * config.rows }, (_, i) => {
-              const col = i % config.cols;
-              const row = Math.floor(i / config.cols);
-              const { x, y } = at(col, row);
-              return (
-                <motion.div
-                  key={`${col}-${row}`}
-                  className="absolute top-0 left-0 rounded-full bg-black/30 shadow-[inset_0_3px_6px_rgba(0,0,0,0.35)]"
-                  initial={{ x, y, width: disc, height: disc, scale: 0 }}
-                  animate={{ x, y, width: disc, height: disc, scale: 1 }}
-                  transition={{ ...spring, delay: Math.min(0.25, (col + row) * 0.015) }}
-                />
-              );
-            })}
-
-            {/* Where your piece would land */}
-            {hover !== null && ghostRow >= 0 && (
+    <motion.div key="board" ref={area} className="flex size-full items-center justify-center" initial={{ opacity: 0, scale: 0.85, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={spring}>
+      {size.w > 0 && (
+        <motion.div
+          className="relative rounded-[22px] shadow-[0_30px_60px_-24px_rgba(20,40,120,0.6),inset_0_1px_0_rgba(255,255,255,0.18)]"
+          initial={false}
+          animate={{ width, height, backgroundColor: config.board }}
+          transition={spring}
+          onMouseLeave={() => setHover(null)}
+        >
+          {Array.from({ length: config.cols * config.rows }, (_, i) => {
+            const col = i % config.cols;
+            const row = Math.floor(i / config.cols);
+            const { x, y } = at(col, row);
+            return (
               <motion.div
-                className="absolute top-0 left-0 rounded-full"
-                style={{ width: disc, height: disc, backgroundColor: config.colors[turn] }}
-                initial={false}
-                animate={{ ...at(hover, ghostRow), opacity: 0.35 }}
-                transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                key={`${col}-${row}`}
+                className="absolute top-0 left-0 rounded-full bg-black/30 shadow-[inset_0_3px_6px_rgba(0,0,0,0.35)]"
+                initial={{ x, y, width: disc, height: disc, scale: 0 }}
+                animate={{ x, y, width: disc, height: disc, scale: 1 }}
+                transition={{ ...spring, delay: Math.min(0.3, (col + row) * 0.02) }}
               />
-            )}
+            );
+          })}
 
-            {/* Pieces */}
-            {pieces.map((p) => {
-              const { x, y } = at(p.col, p.row);
-              const winning = !!win?.includes(p.id);
-              return (
-                <motion.div
-                  key={p.id}
-                  className="absolute top-0 left-0 rounded-full"
-                  style={{ boxShadow: "inset 0 -4px 0 rgba(0,0,0,0.18), inset 0 3px 0 rgba(255,255,255,0.35)" }}
-                  initial={{ x, y: -disc * 1.4, width: disc, height: disc, opacity: 0, backgroundColor: config.colors[p.player] }}
-                  animate={{
-                    x,
-                    y,
-                    width: disc,
-                    height: disc,
-                    opacity: win && config.winGlow && !winning ? 0.35 : 1,
-                    backgroundColor: config.colors[p.player],
-                    scale: winning && config.winGlow ? [1, 1.12, 1] : 1,
-                    filter: winning && config.winGlow ? `drop-shadow(0 0 ${cell * 0.25}px ${config.colors[p.player]})` : "drop-shadow(0 0 0px transparent)",
-                  }}
-                  transition={{
-                    y: { type: "spring", stiffness: 420, damping: 18 },
-                    opacity: { duration: 0.2 },
-                    backgroundColor: { duration: 0.9 },
-                    scale: winning && config.winGlow ? { duration: 1.1, repeat: Infinity } : spring,
-                    default: spring,
-                  }}
-                />
-              );
-            })}
+          {hover !== null && ghostRow >= 0 && (
+            <motion.div
+              className="absolute top-0 left-0 rounded-full"
+              style={{ width: disc, height: disc, backgroundColor: config.colors[turn] }}
+              initial={false}
+              animate={{ ...at(hover, ghostRow), opacity: 0.35 }}
+              transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            />
+          )}
 
-            {/* Click targets, one per column */}
-            <div className="absolute inset-0 flex" style={{ padding: pad }}>
-              {Array.from({ length: config.cols }, (_, col) => (
-                <button
-                  key={col}
-                  type="button"
-                  aria-label={`Drop a piece in column ${col + 1}`}
-                  className="h-full flex-1 rounded-xl transition-colors hover:bg-white/8 focus-visible:bg-white/10 focus-visible:outline-none"
-                  onMouseEnter={() => setHover(col)}
-                  onFocus={() => setHover(col)}
-                  onClick={() => onDrop(col)}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </div>
+          {pieces.map((p) => {
+            const { x, y } = at(p.col, p.row);
+            const winning = !!win?.includes(p.id);
+            const glow = winning && config.winGlow;
+            return (
+              <motion.div
+                key={p.id}
+                className="absolute top-0 left-0 rounded-full"
+                style={{ boxShadow: "inset 0 -4px 0 rgba(0,0,0,0.18), inset 0 3px 0 rgba(255,255,255,0.35)" }}
+                initial={{ x, y: -disc * 1.4, width: disc, height: disc, opacity: 0, backgroundColor: config.colors[p.player] }}
+                animate={{
+                  x,
+                  y,
+                  width: disc,
+                  height: disc,
+                  opacity: win && config.winGlow && !winning ? 0.35 : 1,
+                  backgroundColor: config.colors[p.player],
+                  scale: glow ? [1, 1.12, 1] : 1,
+                  filter: glow ? `drop-shadow(0 0 ${cell * 0.25}px ${config.colors[p.player]})` : "drop-shadow(0 0 0px transparent)",
+                }}
+                transition={{
+                  y: { type: "spring", stiffness: 420, damping: 18 },
+                  opacity: { duration: 0.2 },
+                  backgroundColor: { duration: 0.9 },
+                  scale: glow ? { duration: 1.1, repeat: Infinity } : spring,
+                  default: spring,
+                }}
+              />
+            );
+          })}
 
-      <div className="flex h-8 w-full items-center justify-between text-sm">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={win ? `win-${winner}` : `turn-${turn}-${config.names[turn]}`}
-            className="flex items-center gap-2 font-medium"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-          >
-            <motion.span className="size-3.5 rounded-full" animate={{ backgroundColor: config.colors[winner ?? turn] }} />
-            {win && winner !== undefined ? `${config.names[winner]} wins!` : `${config.names[turn]}'s turn`}
-          </motion.div>
-        </AnimatePresence>
-        <button type="button" onClick={onReset} className="flex items-center gap-1.5 rounded-full px-3 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-          <RotateCcw className="size-3.5" />
-          {win ? "Play again" : "Reset"}
-        </button>
-      </div>
+          <div className="absolute inset-0 flex" style={{ padding: pad }}>
+            {Array.from({ length: config.cols }, (_, col) => (
+              <button
+                key={col}
+                type="button"
+                aria-label={`Drop a piece in column ${col + 1}`}
+                className="h-full flex-1 rounded-xl transition-colors hover:bg-white/8 focus-visible:bg-white/10 focus-visible:outline-none"
+                onMouseEnter={() => setHover(col)}
+                onFocus={() => setHover(col)}
+                onClick={() => onDrop(col)}
+              />
+            ))}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
 
-interface GamePreviewProps extends BoardProps {
-  phase: Phase;
+/** Floating white card in a corner of the stage, like the stat cards in a game lobby. */
+function StatCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("rounded-[22px] bg-white/90 px-4 py-3 text-[#080e2b] shadow-[0_12px_40px_-12px_rgba(20,40,120,0.35)] backdrop-blur dark:bg-white/[0.08] dark:text-foreground", className)}>
+      {children}
+    </div>
+  );
+}
+
+export interface Change {
   version: number;
-  toast?: { id: number; text: string };
+  title: string;
+  by: string;
+}
+
+interface GameStageProps extends BoardProps {
+  phase: Phase;
+  change?: Change;
+  showChange: boolean;
+  people: number;
+  onReset: () => void;
   className?: string;
 }
 
-/** A browser window showing the app Ensemble built, updated live as the chat asks for changes. */
-export function GamePreview({ phase, version, toast, className, ...board }: GamePreviewProps) {
+/** The app the group is building, on a softly lit stage with its latest change called out. */
+export function GameStage({ phase, change, showChange, people, onReset, className, ...board }: GameStageProps) {
+  const turn = turnOf(board.pieces);
+  const winner = board.win ? board.pieces.find((p) => p.id === board.win![0])?.player : undefined;
   return (
-    <div className={cn("relative flex flex-col overflow-hidden rounded-[26px] border bg-card/85 shadow-[0_30px_120px_-30px_rgba(24,60,115,0.45)] backdrop-blur-xl", className)}>
-      <div className="flex items-center gap-3 border-b px-4 py-3">
-        <div className="flex gap-1.5">
-          <span className="size-3 rounded-full bg-[#ff5f57]" />
-          <span className="size-3 rounded-full bg-[#febc2e]" />
-          <span className="size-3 rounded-full bg-[#28c840]" />
+    <div className={cn("relative size-full overflow-hidden bg-[radial-gradient(ellipse_at_50%_42%,#ffffff_0%,#e6edf9_62%,#d6e0f2_100%)] dark:bg-[radial-gradient(ellipse_at_50%_42%,#22325a_0%,#15213d_60%,#0e182c_100%)]", className)}>
+      {/* Top row: app, whose turn, version */}
+      <div className="absolute inset-x-4 top-4 z-10 flex items-start justify-between gap-3 sm:inset-x-5 sm:top-5">
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[#0b1220] shadow-lg">
+            <EnsembleMark className="size-7 text-[#8daaff]" />
+          </span>
+          <span className="hidden leading-tight sm:block">
+            <span className="block text-sm font-semibold">Connect Four</span>
+            <span className="block text-[11px] text-muted-foreground">ensemble.app/p/connect-four</span>
+          </span>
         </div>
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-          <Lock className="size-3 shrink-0" />
-          <span className="truncate">ensemble.app/p/connect-four</span>
-        </div>
-        <AnimatePresence mode="popLayout">
+
+        <AnimatePresence>
           {phase === "ready" && (
-            <motion.span
-              key={version}
-              className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary dark:text-[#8daaff]"
-              initial={{ opacity: 0, scale: 0.6, y: -8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.6, y: 8 }}
-              transition={{ type: "spring", stiffness: 500, damping: 25 }}
+            <motion.div
+              className="flex items-center gap-2 rounded-full bg-white/80 py-1.5 pr-1.5 pl-3 text-sm font-medium text-[#080e2b] shadow-sm backdrop-blur dark:bg-white/10 dark:text-foreground"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
             >
-              v{version}
-            </motion.span>
+              <motion.span className="size-3 rounded-full" animate={{ backgroundColor: board.config.colors[winner ?? turn] }} />
+              {board.win && winner !== undefined ? `${board.config.names[winner]} wins!` : `${board.config.names[turn]}'s turn`}
+              <button type="button" onClick={onReset} aria-label={board.win ? "Play again" : "Reset the board"} className="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10">
+                <RotateCcw className="size-3.5" />
+              </button>
+            </motion.div>
           )}
         </AnimatePresence>
+
+        <div className="grid size-11 shrink-0 place-items-center rounded-[14px] border-2 border-[#0b1220]/80 bg-white/70 text-sm font-bold text-[#080e2b] backdrop-blur dark:border-white/20 dark:bg-white/10 dark:text-foreground">
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span key={change?.version ?? 0} initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -14, opacity: 0 }} transition={{ type: "spring", stiffness: 500, damping: 28 }}>
+              {change ? `v${change.version}` : "–"}
+            </motion.span>
+          </AnimatePresence>
+        </div>
       </div>
 
-      <div className="relative min-h-0 flex-1">
+      {/* The app itself */}
+      <div className="absolute inset-x-4 top-[76px] bottom-[96px] flex items-center justify-center sm:inset-x-8 sm:bottom-[108px]">
         <AnimatePresence mode="wait">
           {phase === "empty" && <Placeholder />}
           {phase === "building" && <Building />}
           {phase === "ready" && <Board {...board} />}
         </AnimatePresence>
-
-        <AnimatePresence>
-          {toast && (
-            <motion.div
-              key={toast.id}
-              className="absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover/95 px-3 py-1.5 text-xs font-medium whitespace-nowrap shadow-lg"
-              initial={{ opacity: 0, y: -12, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -12, scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 420, damping: 28 }}
-            >
-              <Sparkles className="size-3.5 text-primary" />
-              {toast.text}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+
+      {/* Bottom corners: what just changed, and who's prompting */}
+      <AnimatePresence>
+        {showChange && change && (
+          <motion.div
+            key={change.version}
+            className="absolute bottom-4 left-4 z-10 sm:bottom-5 sm:left-5"
+            initial={{ opacity: 0, y: 24, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 300, damping: 26, delay: 0.15 }}
+          >
+            <StatCard className="min-w-44">
+              <p className="text-[19px] leading-tight font-semibold tracking-[-0.02em]">{change.title}</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                v{change.version} · asked by {change.by}
+              </p>
+            </StatCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <StatCard className="absolute right-5 bottom-5 z-10 hidden min-w-36 flex-col sm:flex">
+        <span className="flex items-center justify-between gap-6">
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span key={people} className="text-[26px] leading-none font-semibold tracking-[-0.03em]" initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -12, opacity: 0 }}>
+              {people}
+            </motion.span>
+          </AnimatePresence>
+          <Users className="size-4 text-muted-foreground" />
+        </span>
+        <span className="mt-2 text-xs font-medium">People prompting</span>
+      </StatCard>
     </div>
   );
 }
