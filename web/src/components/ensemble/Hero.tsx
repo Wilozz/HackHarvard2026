@@ -178,7 +178,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
 
   return (
     <section className="relative isolate overflow-hidden pb-10">
-      <div className="pointer-events-none absolute top-[-30%] left-1/2 -z-10 h-[900px] w-[1300px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(79,123,240,0.16),transparent)] dark:bg-[radial-gradient(closest-side,rgba(79,123,240,0.24),transparent)]" />
+      <div className="pointer-events-none absolute top-[-30%] left-1/2 -z-10 h-[900px] w-[1300px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(165,196,255,0.45),transparent)] dark:bg-[radial-gradient(closest-side,rgba(165,196,255,0.12),transparent)]" />
 
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
         <EnsembleLogo />
@@ -193,7 +193,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         className="px-5 pt-4 pb-10 text-center text-[clamp(48px,8vw,104px)] leading-[0.95] font-semibold tracking-[-0.055em] sm:pt-8 sm:pb-14"
       >
-        Collaborative <em className="font-serif font-normal tracking-[-0.02em] text-primary italic dark:text-[#8daaff]">prompting.</em>
+        Collaborative <em className="font-serif font-normal tracking-[-0.02em] text-primary italic">prompting.</em>
       </motion.h1>
 
       <motion.div
@@ -264,7 +264,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
             {done ? <RotateCcw className="size-4" /> : paused ? <Play className="size-4 fill-current" /> : <Pause className="size-4 fill-current" />}
           </button>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-foreground/10">
-            <motion.div className="h-full rounded-full bg-gradient-to-r from-[#f472b6] to-primary" animate={{ width: `${progress * 100}%` }} transition={{ ease: "linear", duration: 0.1 }} />
+            <motion.div className="h-full rounded-full bg-primary" animate={{ width: `${progress * 100}%` }} transition={{ ease: "linear", duration: 0.1 }} />
           </div>
         </div>
       </motion.div>
