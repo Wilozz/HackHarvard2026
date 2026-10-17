@@ -2,7 +2,7 @@
   "name": "tripchat",
   "version": "0.1.0",
   "private": true,
-  "description": "AI travel agent that lives in your iMessage group chat (HackHarvard 2026)",
+  "description": "Orbit: build apps together in an iMessage group chat (HackHarvard 2026)",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -17,15 +17,20 @@
     "reset": "tsx scripts/reset.ts",
     "db:setup": "tsx scripts/db.ts setup",
     "db:check": "tsx scripts/db.ts check",
-    "db:selftest": "tsx scripts/db.ts selftest"
+    "db:selftest": "tsx scripts/db.ts selftest",
+    "orbit:cleanup": "tsx scripts/orbit-cleanup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
+    "@daytonaio/sdk": "^0.225.0",
     "@electric-sql/pglite": "^0.5.10",
     "@electric-sql/pglite-pgvector": "^0.0.11",
     "@huggingface/transformers": "^4.3.1",
     "dotenv": "^18.0.8",
+    "heic-convert": "^2.1.0",
     "pg": "^8.23.1",
+    "puppeteer-core": "^24.43.1",
+    "sharp": "^0.34.5",
     "spectrum-ts": "^12.11.0",
     "zod": "^4.6.7"
   },

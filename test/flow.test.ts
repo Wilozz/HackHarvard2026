@@ -5,6 +5,7 @@ import { test } from "node:test";
 import type { Message, Space } from "spectrum-ts";
 
 Object.assign(process.env, {
+  AGENT_NAME: "Tripchat",
   PGLITE_DIR: "memory://",
   DATABASE_URL: "",
   NESSIE_API_KEY: "",

@@ -37,7 +37,11 @@ const env = z
 
     // Unset → mock bank with balances from members.json.
     NESSIE_API_KEY: optional,
-    NESSIE_BASE_URL: z.string().default("http://api.nessieisreal.com"),
+    // Opening balance for members who join through the signup page (members.json can override per person).
+    NESSIE_START_BALANCE: z.coerce.number().int().min(0).default(1500),
+    // No single transfer may exceed this many whole dollars.
+    MAX_TRANSFER_USD: z.coerce.number().int().min(1).default(1000),
+    NESSIE_BASE_URL: z.string().default("https://api.nessieisreal.com"),
 
     VOICE_PROVIDER: z.enum(["mock", "retell"]).default("mock"),
     RETELL_API_KEY: optional,
@@ -50,7 +54,34 @@ const env = z
     MOCK_CALL_OUTCOME: z.enum(["booked", "needs_input", "failed"]).default("booked"),
     MOCK_CALL_DELAY_MS: z.coerce.number().int().min(0).default(5000),
 
-    AGENT_NAME: z.string().default("Tripchat"),
+    AGENT_NAME: z.string().default("Ensemble"),
+
+    // Ensemble (code name Orbit): build apps from the group chat.
+    // Where apps run: "daytona" (public preview links; needs DAYTONA_API_KEY) or "local" (served by this machine, for testing).
+    ORBIT_HOST: z.enum(["auto", "daytona", "local"]).default("auto"),
+    DAYTONA_API_KEY: optional,
+    DAYTONA_API_URL: optional,
+    // How Claude writes the app: "api" (Claude writes the file from this machine) or "claude-code" (Claude Code runs inside the sandbox).
+    // auto → claude-code when Daytona is set up, else api.
+    ORBIT_BUILDER: z.enum(["auto", "api", "claude-code"]).default("auto"),
+    ORBIT_BUILD_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
+    // The design step that turns the whole chat into a detailed spec before a new app is built.
+    ORBIT_SPEC: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+    ORBIT_SPEC_EFFORT: z.enum(["low", "medium", "high"]).default("medium"),
+    ORBIT_SPEC_MODEL: z.string().default("claude-sonnet-5-5"),
+    // Comma-separated phone numbers allowed to start builds. Empty → everyone in members.json and the signup groups.
+    ORBIT_ALLOWED: optional,
+    // Edits (v2, v3…) build right away; set true to make them wait for "ship it" too.
+    ORBIT_CONFIRM_EDITS: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+    // Longest a build may take before it's abandoned, in seconds.
+    ORBIT_BUILD_TIMEOUT_S: z.coerce.number().int().min(30).default(420),
+    ORBIT_FILE: z.string().default("data/orbit.json"),
+    // Every app's HTML, one folder per version (also what the local host serves).
+    ORBIT_APPS_DIR: z.string().default("data/apps"),
+    // Base URL for links when ORBIT_HOST=local, e.g. http://10.0.0.5:8788 to open them on a phone on the same Wi-Fi.
+    ORBIT_PUBLIC_URL: optional,
+    // Chrome for the post-build check (console errors + screenshot). Empty → skip the check.
+    CHROME_PATH: z.string().default("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
     TRIP_TIMEZONE: z.string().default("America/New_York"),
     // Share of a member's bank balance the planner may assume they can spend.
     BALANCE_CAP_FRACTION: z.coerce.number().min(0).max(1).default(0.5),
@@ -68,6 +99,8 @@ const platform = resolvePlatform();
 if (platform === "imessage" && !(env.PHOTON_PROJECT_ID && env.PHOTON_API_KEY)) {
   throw new Error("PLATFORM=imessage needs PHOTON_PROJECT_ID and PHOTON_API_KEY");
 }
+if (env.ORBIT_HOST === "daytona" && !env.DAYTONA_API_KEY) throw new Error("ORBIT_HOST=daytona needs DAYTONA_API_KEY");
+if (env.ORBIT_BUILDER === "claude-code" && !env.DAYTONA_API_KEY) throw new Error("ORBIT_BUILDER=claude-code runs inside Daytona, so it needs DAYTONA_API_KEY");
 if (env.VOICE_PROVIDER === "retell" && !(env.RETELL_API_KEY && env.RETELL_FROM_NUMBER && env.RETELL_AGENT_ID)) {
   throw new Error("VOICE_PROVIDER=retell needs RETELL_API_KEY, RETELL_FROM_NUMBER and RETELL_AGENT_ID");
 }
@@ -92,6 +125,10 @@ export const config = {
   platform,
   callAllowlist: allowlist,
   photonReplySpaces: replySpaces as ReadonlyMap<string, string>,
+  orbitHost: (env.ORBIT_HOST === "auto" ? (env.DAYTONA_API_KEY ? "daytona" : "local") : env.ORBIT_HOST) as "daytona" | "local",
+  orbitLocalBase: (env.ORBIT_PUBLIC_URL ?? `http://127.0.0.1:${env.SIGNUP_PORT}`).replace(/\/+$/, ""),
+  orbitBuilder: (env.ORBIT_BUILDER === "auto" ? (env.DAYTONA_API_KEY ? "claude-code" : "api") : env.ORBIT_BUILDER) as "api" | "claude-code",
+  orbitAllowed: (env.ORBIT_ALLOWED ?? "").split(",").map((n) => n.trim()).filter(Boolean),
   // Embedding model and its output dimension. Changing the model means
   // changing EMBED_DIM and recreating the chunks table (npm run reset -- --all).
   embeddingModel: "Xenova/bge-small-en-v1.5",

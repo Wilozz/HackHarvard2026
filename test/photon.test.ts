@@ -95,6 +95,12 @@ class FakePhoton implements PhotonApi {
   }
 
   async setTyping() {}
+  async downloadAttachment(id: string) {
+    const data = this.attachments.get(id);
+    if (!data) throw new Error(`no attachment ${id}`);
+    return { contentType: "image/png", data };
+  }
+  attachments = new Map<string, Buffer>();
 }
 
 const roster = [
@@ -245,7 +251,7 @@ test("signup starts a group with the line first and greets everyone by name, onc
   assert.equal(api.spaces[0]!.participantIds[0], AGENT);
   assert.equal(api.sent.length, 1);
   assert.equal(api.sent[0]!.spaceId, first.group.spaceId);
-  assert.match(api.sent[0]!.text, /^Hi Wilson and Harsh! .*plan spring break\./);
+  assert.match(api.sent[0]!.text, /^Hi Wilson and Harsh! I.m Tripchat\. .*First up: spring break\?/);
   assert.equal(groups.nameOf(HARSH.id), "Harsh");
 
   // The same people again: same chat, new names, no second welcome, title kept.

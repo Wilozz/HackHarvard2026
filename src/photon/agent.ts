@@ -1,4 +1,5 @@
 import { findMention } from "../agent/commands";
+import type { Bank } from "../bank";
 import { suggestTrip } from "../agent/suggest";
 import { config } from "../config";
 import { getDb } from "../db";
@@ -11,6 +12,11 @@ import { contextForRequest, type SlotDebug } from "../memory/retrieve";
 import { createPhotonClient, type PhotonApi, type PhotonContent, type PhotonMessage, type PhotonUser } from "./api";
 import { GroupRegistry, type Group } from "./groups";
 import { startSignupServer } from "./signup";
+import { isApproveText, parseSplitCommand, SplitService } from "./split";
+import { createHost } from "../orbit/hosts";
+import { recentImages } from "../orbit/images";
+import { isShipIt, OrbitService } from "../orbit/service";
+import { OrbitStore } from "../orbit/store";
 
 /** Each poll re-lists this far back, since createdAt order can lag arrival order. Seen ids dedupe the overlap. */
 const LOOKBACK_MS = 10_000;
@@ -95,16 +101,29 @@ export class PhotonAgent {
   private readonly memory: PhotonMemory;
   private readonly replySpaces: ReadonlyMap<string, string>;
   private readonly groups: GroupRegistry;
+  /** Budgets, the payer and approvals. Off unless a bank is given. */
+  private readonly split?: SplitService;
+  /** Build apps from the chat. When set, it answers every mention. */
+  private readonly orbit?: OrbitService;
 
   constructor(
     private readonly api: PhotonApi,
     private readonly roster: Member[],
-    opts: { brain?: PhotonBrain; memory?: PhotonMemory; replySpaces?: ReadonlyMap<string, string>; groups?: GroupRegistry } = {},
+    opts: {
+      brain?: PhotonBrain;
+      memory?: PhotonMemory;
+      replySpaces?: ReadonlyMap<string, string>;
+      groups?: GroupRegistry;
+      bank?: Bank;
+      orbit?: OrbitService;
+    } = {},
   ) {
     this.brain = opts.brain ?? { suggestTrip };
     this.memory = opts.memory ?? databaseMemory;
     this.replySpaces = opts.replySpaces ?? config.photonReplySpaces;
     this.groups = opts.groups ?? new GroupRegistry();
+    if (opts.bank) this.split = new SplitService(roster, opts.bank, this.groups);
+    this.orbit = opts.orbit;
   }
 
   /**
@@ -232,7 +251,12 @@ export class PhotonAgent {
     if (!text) return;
     const isGroup = m.space.kind === "group";
     const { mentioned, body } = findMention(text, config.AGENT_NAME);
-    if (isGroup && !mentioned) return;
+    const chatId = this.chatIdFor(m.space.id);
+    // A bare "approve" counts without a mention, but only while a split is waiting on the group.
+    // Without a mention, only a bare "ship it" (while a plan waits) or "approve" (while a split waits) counts.
+    const bareShip = !!this.orbit && isShipIt(text) && this.orbit.hasPending(chatId);
+    const bareApprove = !this.orbit && !!this.split && isApproveText(text) && (await this.split.isCollecting(chatId));
+    if (isGroup && !mentioned && !bareShip && !bareApprove) return;
 
     const senderId = this.replyAgent(m);
     if (!senderId) {
@@ -243,7 +267,6 @@ export class PhotonAgent {
     // Memory keys a chat by the Space its messages arrive in (or its
     // PHOTON_REPLY_SPACES target), so this chat's questions and our answers
     // stay together even when replies go to a signup group's Space.
-    const chatId = this.chatIdFor(m.space.id);
 
     // Working out where to reply needs the project's messages from Photon.
     // If Photon can't list them, still answer, in the Space the message came from.
@@ -262,10 +285,54 @@ export class PhotonAgent {
     }
 
     void this.api.setTyping(replySpace, senderId, true).catch(() => undefined);
+
+    if (this.orbit) {
+      try {
+        await this.orbit.handle({
+          chatId,
+          body,
+          askedBy: this.nameOf(m.sentBy),
+          senderHandle: m.sentBy.handle,
+          transcript: () => this.chatContext(chatId, body, all, this.chatSpaces(m.space.id, replySpace)).catch(() => ""),
+          // The whole chat straight from Photon (minus anything forgotten); memory's retrieval if Photon couldn't list it.
+          fullTranscript: async () =>
+            all
+              ? this.transcript(all, this.chatSpaces(m.space.id, replySpace), this.forgotten.get(chatId))
+              : this.chatContext(chatId, body, all, this.chatSpaces(m.space.id, replySpace)).catch(() => ""),
+          images: async () =>
+            all ? recentImages({ api: this.api, all, spaceIds: this.chatSpaces(m.space.id, replySpace), upTo: m, nameOf: (x) => this.nameOf(x.sentBy) }) : [],
+          say: (text, key) => this.send(m, chatId, senderId, replySpace, text, `orbit:${m.id}:${key}`),
+        });
+      } catch (err) {
+        log.error("orbit_failed", err, { messageId: m.id });
+        await this.send(m, chatId, senderId, replySpace, "Sorry, something went wrong on my side. Try again in a minute.", `orbit:${m.id}:error`);
+      }
+      return;
+    }
+
     let reply: string;
+    const money = this.split ? parseSplitCommand(body) : undefined;
+    if (this.split && money) {
+      try {
+        reply = await this.split.handle(money, {
+          chatId,
+          replySpaceId: replySpace,
+          senderHandle: m.sentBy.handle,
+          senderName: this.nameOf(m.sentBy),
+          messageId: m.id,
+        });
+      } catch (err) {
+        log.error("photon_split_failed", err, { messageId: m.id });
+        reply = "Sorry, something went wrong on my side, so I didn't move any money. Try again in a minute.";
+      }
+      await this.send(m, chatId, senderId, replySpace, reply);
+      return;
+    }
+
     try {
       const transcript = await this.chatContext(chatId, body, all, this.chatSpaces(m.space.id, replySpace));
-      reply = await this.brain.suggestTrip({ transcript, askedBy: this.nameOf(m.sentBy), request: body });
+      const budgets = await this.split?.budgetLine(this.split.travelers(replySpace)).catch(() => undefined);
+      reply = await this.brain.suggestTrip({ transcript, askedBy: this.nameOf(m.sentBy), request: body, budgets });
     } catch (err) {
       log.error("photon_suggest_failed", err, { messageId: m.id });
       reply = "Sorry, I couldn't come up with anything just now. Try asking again in a minute.";
@@ -290,7 +357,7 @@ export class PhotonAgent {
     await this.send(m, chatId, senderId, replySpace, reply);
   }
 
-  private async send(m: PhotonMessage, chatId: string, senderId: string, replySpace: string, text: string): Promise<void> {
+  private async send(m: PhotonMessage, chatId: string, senderId: string, replySpace: string, text: string, key = `reply:${m.id}`): Promise<void> {
     // No parentMessageId: Photon rejects threaded replies on our iMessage
     // Spaces (409 SPACE_NOT_SENDABLE "Replies are not supported for this Space").
     const sent = await this.api.sendText({
@@ -298,7 +365,7 @@ export class PhotonAgent {
       senderId,
       text,
       // One reply per incoming message, even across retries and restarts.
-      idempotencyKey: `reply:${m.id}`,
+      idempotencyKey: key,
     });
     log.info("photon_replied", {
       messageId: m.id,
@@ -427,9 +494,11 @@ export async function runPhotonAgent(roster: Member[]): Promise<never> {
     apiKey: config.PHOTON_API_KEY!,
   });
   const groups = new GroupRegistry(config.GROUPS_FILE);
-  const agent = new PhotonAgent(api, roster, { groups });
+  const host = createHost();
+  const orbit = new OrbitService(new OrbitStore(), host, roster, groups);
+  const agent = new PhotonAgent(api, roster, { groups, orbit });
   await agent.start();
-  startSignupServer(api, groups);
+  startSignupServer(api, groups, { serveApps: host.name === "local" });
   startDebugServer(agent);
   log.info("started", {
     platform: "imessage",
@@ -437,6 +506,8 @@ export async function runPhotonAgent(roster: Member[]): Promise<never> {
     model: config.CLAUDE_MODEL,
     pollMs: config.PHOTON_POLL_MS,
     memory: config.DATABASE_URL ? "postgres" : "pglite",
+    host: host.name,
+    builder: config.orbitBuilder,
   });
   return agent.run();
 }

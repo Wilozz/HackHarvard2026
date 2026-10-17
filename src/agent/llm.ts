@@ -15,6 +15,24 @@ const FALLBACK = {
 
 type Effort = "low" | "medium" | "high";
 
+/** A JPEG to show Claude, with a short label ("Image 1, sent by Harsh"). */
+export interface LlmImage {
+  label: string;
+  data: Buffer;
+}
+
+/** The user turn: each image after its label, then the text. Plain text when there are no images. */
+function userContent(text: string, images: LlmImage[] = []): string | Anthropic.Beta.BetaContentBlockParam[] {
+  if (images.length === 0) return text;
+  return [
+    ...images.flatMap((img): Anthropic.Beta.BetaContentBlockParam[] => [
+      { type: "text", text: img.label },
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: img.data.toString("base64") } },
+    ]),
+    { type: "text", text },
+  ];
+}
+
 export class LlmError extends Error {
   constructor(message: string) {
     super(message);
@@ -33,13 +51,14 @@ export async function structured<S extends z.ZodType>(args: {
   user: string;
   schema: S;
   effort: Effort;
+  images?: LlmImage[];
 }): Promise<z.infer<S>> {
   const res = await client.beta.messages.parse({
     model: config.CLAUDE_MODEL,
     max_tokens: 16000,
     ...FALLBACK,
     system: args.system,
-    messages: [{ role: "user", content: args.user }],
+    messages: [{ role: "user", content: userContent(args.user, args.images) }],
     output_config: { effort: args.effort, format: betaZodOutputFormat(args.schema) },
   });
   checkStop(res.stop_reason);
@@ -48,15 +67,39 @@ export async function structured<S extends z.ZodType>(args: {
 }
 
 /** One request with a plain-text reply. */
-export async function complete(args: { system: string; user: string; effort: Effort }): Promise<string> {
+export async function complete(args: { system: string; user: string; effort: Effort; model?: string; images?: LlmImage[] }): Promise<string> {
   const res = await client.beta.messages.create({
-    model: config.CLAUDE_MODEL,
+    model: args.model ?? config.CLAUDE_MODEL,
     max_tokens: 16000,
     ...FALLBACK,
     system: args.system,
-    messages: [{ role: "user", content: args.user }],
+    messages: [{ role: "user", content: userContent(args.user, args.images) }],
     output_config: { effort: args.effort },
   });
+  checkStop(res.stop_reason);
+  const text = res.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+  if (!text) throw new LlmError("empty reply");
+  return text;
+}
+
+/**
+ * A long plain-text reply (a whole generated app), streamed so a large
+ * max_tokens can't hit the HTTP timeout. Only the final text is returned.
+ */
+export async function streamText(args: { system: string; user: string; effort: Effort; maxTokens?: number; images?: LlmImage[] }): Promise<string> {
+  const stream = client.beta.messages.stream({
+    model: config.CLAUDE_MODEL,
+    max_tokens: args.maxTokens ?? 64000,
+    ...FALLBACK,
+    system: args.system,
+    messages: [{ role: "user", content: userContent(args.user, args.images) }],
+    output_config: { effort: args.effort },
+  });
+  const res = await stream.finalMessage();
   checkStop(res.stop_reason);
   const text = res.content
     .filter((b) => b.type === "text")

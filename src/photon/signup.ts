@@ -1,9 +1,13 @@
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { join } from "node:path";
 import { z } from "zod";
 import { config } from "../config";
 import { log } from "../log";
 import { PhotonError, type PhotonApi, type PhotonUser } from "./api";
 import type { Group, GroupMember, GroupRegistry } from "./groups";
+import type { Dashboard } from "../bank/dashboard";
+import { nessiePage } from "./nessie-page";
 import { signupPage } from "./signup-page";
 
 /** People per group, not counting the agent. Two or more makes it a group chat. */
@@ -69,8 +73,8 @@ function listNames(names: string[]): string {
 export function welcomeText(group: Group): string {
   const n = config.AGENT_NAME;
   return [
-    `Hi ${listNames(group.members.map((m) => m.name))}! I'm ${n}, an AI travel agent, and I'm here to help you all plan ${group.title ?? "your next trip"}.`,
-    `Talk here like you normally would about when you're free, where you want to go, and what you want to spend. Whenever you're ready, text "@${n} give us a trip idea" and I'll suggest a trip that works for everyone.`,
+    `Hi ${listNames(group.members.map((m) => m.name))}! I'm ${n}. Tell me what to build and I'll make it and send a link you can all open${group.title ? `. First up: ${group.title}?` : "."}`,
+    `Text something like "@${n} make space invaders where the aliens are us". I'll write up the plan, someone replies "ship it", and about a minute later you get the link. Ask for changes anytime and I'll post a new version.`,
   ].join("\n\n");
 }
 
@@ -144,8 +148,17 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** The signup page and its one endpoint, POST /api/groups. */
-export function startSignupServer(api: PhotonApi, groups: GroupRegistry): void {
+export interface ServerExtras {
+  /** Powers the live bank page at /nessie. */
+  dashboard?: Dashboard;
+  /** Runs after a group chat starts, e.g. to open bank accounts for the new people. A failure here never fails the signup. */
+  onGroupCreated?: (group: Group) => Promise<void>;
+  /** Serve Orbit's apps from ORBIT_APPS_DIR at /apps/<project>/v<n>/ (the "local" host). */
+  serveApps?: boolean;
+}
+
+/** The signup page (POST /api/groups) and the live bank page (/nessie, GET /api/nessie). */
+export function startSignupServer(api: PhotonApi, groups: GroupRegistry, extras: ServerExtras = {}): void {
   if (config.SIGNUP_PORT === 0) return;
   // One signup at a time, so two submissions can't race on the same people.
   let busy: Promise<void> = Promise.resolve();
@@ -166,6 +179,7 @@ export function startSignupServer(api: PhotonApi, groups: GroupRegistry): void {
       const line = await groupLine(api);
       const { group, existing } = await createGroupChat(api, groups, line, parsed.input);
       log.info("signup_group", { spaceId: group.spaceId, members: group.members.length, existing });
+      await extras.onGroupCreated?.(group).catch((err) => log.error("signup_hook_failed", err));
       sendJson(res, 200, { spaceId: group.spaceId, names: group.members.map((m) => m.name), agentPhone: line.handle, existing });
     } catch (err) {
       log.error("signup_failed", err);
@@ -175,9 +189,40 @@ export function startSignupServer(api: PhotonApi, groups: GroupRegistry): void {
   }
 
   const server = createServer((req, res) => {
-    const path = (req.url ?? "/").split("?")[0];
+    const path = (req.url ?? "/").split("?")[0] ?? "/";
     if (req.method === "GET" && path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(signupPage(config.AGENT_NAME, MAX_MEMBERS));
+      return;
+    }
+    const app = path.match(/^\/apps\/([0-9a-f]{8})\/v(\d{1,4})\/?(?:index\.html|screenshot\.png)?$/);
+    if (req.method === "GET" && app && extras.serveApps) {
+      const file = path.endsWith("screenshot.png") ? "screenshot.png" : "index.html";
+      const full = join(config.ORBIT_APPS_DIR, app[1]!, `v${app[2]}`, file);
+      if (!path.endsWith("/") && file === "index.html" && !path.endsWith("index.html")) {
+        res.writeHead(301, { location: `${path}/` }).end();
+        return;
+      }
+      if (!existsSync(full)) {
+        res.writeHead(404, { "content-type": "text/plain" }).end("Not found");
+        return;
+      }
+      res.writeHead(200, { "content-type": file === "index.html" ? "text/html; charset=utf-8" : "image/png", "cache-control": "no-store" }).end(readFileSync(full));
+      return;
+    }
+    if (req.method === "GET" && path === "/nessie" && extras.dashboard) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(nessiePage(config.AGENT_NAME));
+      return;
+    }
+    if (req.method === "GET" && path === "/api/nessie" && extras.dashboard) {
+      extras.dashboard.snapshot().then(
+        (snapshot) => {
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }).end(JSON.stringify(snapshot));
+        },
+        (err) => {
+          log.error("dashboard_failed", err);
+          sendJson(res, 500, { error: "Couldn't read the bank." });
+        },
+      );
       return;
     }
     if (req.method === "POST" && path === "/api/groups") {

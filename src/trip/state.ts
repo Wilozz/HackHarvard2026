@@ -68,6 +68,8 @@ export interface TripState {
   votes: Record<string, number>;
   chosen?: number;
   booking?: Booking;
+  /** Whole-dollar total to split when there's no hotel booking behind it (iMessage "I'll pay $480"). */
+  splitTotalUsd?: number;
   payerKey?: string;
   /** Member key → whole dollars owed to the payer. */
   shares: Record<string, number>;
@@ -116,6 +118,7 @@ export function resetPlan(trip: TripState): void {
   trip.votes = {};
   delete trip.chosen;
   delete trip.booking;
+  delete trip.splitTotalUsd;
   delete trip.payerKey;
   trip.shares = {};
   trip.approvals = {};

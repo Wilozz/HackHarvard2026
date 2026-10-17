@@ -9,6 +9,8 @@ import { z } from "zod";
 //   - Account balances never change after creation; we track adjustments in
 //     our own ledger (see bank/index.ts).
 //   - Amounts are truncated to whole dollars.
+//   - Deposits (and the withdrawals' reads) require `status`; "completed" works.
+//   - Plain http:// is refused; use https://api.nessieisreal.com.
 // Run `npm run seed:nessie -- --check` with a real key to verify before the demo.
 
 const createdSchema = z.object({
@@ -87,7 +89,12 @@ export class NessieClient {
    * `medium` on a 400.
    */
   private async postTransaction(path: string, amount: number, description: string): Promise<string> {
-    const base = { amount: Math.trunc(amount), description, transaction_date: new Date().toISOString().slice(0, 10) };
+    const base = {
+      amount: Math.trunc(amount),
+      description,
+      transaction_date: new Date().toISOString().slice(0, 10),
+      status: "completed",
+    };
     try {
       return createdSchema.parse(await this.request("POST", path, { medium: "balance", ...base })).objectCreated._id;
     } catch (err) {

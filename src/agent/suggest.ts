@@ -22,9 +22,12 @@ function todayIso(): string {
 }
 
 /** Reply to a mention, given chat context as transcript lines (retrieved + recent messages, or the whole chat as a fallback). */
-export async function suggestTrip(args: { transcript: string; askedBy: string; request: string }): Promise<string> {
+export async function suggestTrip(args: { transcript: string; askedBy: string; request: string; budgets?: string }): Promise<string> {
   const user = [
     `Today is ${todayIso()} (${config.TRIP_TIMEZONE}).`,
+    ...(args.budgets
+      ? [`<limits>${args.budgets}</limits>`, "The limits are what each person can spend, from their bank balance. Keep the trip's cost per person within the lowest one so everyone can afford it."]
+      : []),
     "<chat>",
     args.transcript || "(no messages yet)",
     "</chat>",
