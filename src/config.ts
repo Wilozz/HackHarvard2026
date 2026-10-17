@@ -19,6 +19,13 @@ const env = z
     // the one that sends to it. "pho_spc_IN:pho_spc_OUT,..." sends replies for
     // IN to OUT and reads both as one chat.
     PHOTON_REPLY_SPACES: optional,
+    // Signup page that starts a group chat (iMessage mode). 0 disables it.
+    // Anyone who can reach it can make the line text any number, so it only
+    // listens on this machine unless SIGNUP_HOST says otherwise.
+    SIGNUP_PORT: z.coerce.number().int().min(0).default(8788),
+    SIGNUP_HOST: z.string().default("127.0.0.1"),
+    // Groups started from the signup page: names and phone numbers, gitignored.
+    GROUPS_FILE: z.string().default("data/groups.json"),
     PLATFORM: z.enum(["auto", "imessage", "terminal"]).default("auto"),
 
     // Claude. The SDK itself reads ANTHROPIC_API_KEY (or an `ant auth login` profile).
