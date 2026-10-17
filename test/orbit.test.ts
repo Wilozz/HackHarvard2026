@@ -80,7 +80,9 @@ class FakePhoton implements PhotonApi {
   }
   async sendText(args: SendTextArgs) {
     this.sent.push(args);
-    return { id: `pho_msg_out${this.sent.length}`, status: "dispatched", createdAt: new Date().toISOString() } as PhotonMessage;
+    // Photon stamps our sends on the same clock as everything else.
+    this.clock = Math.max(this.clock + 1000, Date.now());
+    return { id: `pho_msg_out${this.sent.length}`, status: "dispatched", createdAt: new Date(this.clock).toISOString() } as PhotonMessage;
   }
   async setTyping() {}
   async downloadAttachment(id: string) {
@@ -96,6 +98,7 @@ function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean; repos?: 
   const generated: GenerateArgs[] = [];
   const specs: { title: string; brief: string; transcript: string; images?: { label: string }[] }[] = [];
   const briefImages: string[][] = [];
+  const briefTranscripts: string[] = [];
   const published: { project: string; n: number; html: string }[] = [];
   const qualityRuns = [...(opts.qualityErrors ?? [])];
   const store = new OrbitStore(null, mkdtempSync(join(tmpdir(), "orbit-")));
@@ -111,12 +114,18 @@ function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean; repos?: 
     [WILSON, HARSH],
     new GroupRegistry(),
     {
-      writeBrief: async ({ request, current, images }) => (briefImages.push((images ?? []).map((i) => i.label)), 0) ||
-        /joke/i.test(request)
-          ? { action: "reply", title: "", brief: "", reply: "I build small web apps." }
-          : current
-            ? { action: "edit", title: current.title, brief: `Change: ${request}`, reply: "" }
-            : { action: "build", title: "Cat Flap", brief: `A flappy game: ${request}`, reply: "" },
+      writeBrief: async ({ request, apps, images, transcript }) => {
+        briefImages.push((images ?? []).map((i) => i.label));
+        briefTranscripts.push(transcript);
+        if (/joke/i.test(request)) return { action: "reply", title: "", projectId: "", brief: "", reply: "I build small web apps." };
+        const named = apps?.find((a) => request.toLowerCase().includes(a.title.toLowerCase().split(" ")[0]!));
+        const current = apps?.find((a) => a.current);
+        if (/\bnew\b/i.test(request) || !(named ?? current)) {
+          return { action: "build", title: /snake/i.test(request) ? "Neon Snake" : "Cat Flap", projectId: "", brief: `A flappy game: ${request}`, reply: "" };
+        }
+        const t = named ?? current!;
+        return { action: "edit", title: t.title, projectId: t.id, brief: `Change: ${request}`, reply: "" };
+      },
       writeSpec: async ({ title, brief, transcript, images }) => {
         specs.push({ title, brief, transcript, images });
         return `SPEC for ${title}: ${brief}`;
@@ -147,7 +156,7 @@ function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean; repos?: 
     await orbit.idle();
   };
   const texts = () => api.sent.map((s) => s.text);
-  return { api, agent, orbit, store, generated, published, specs, briefImages, step, texts };
+  return { api, agent, orbit, store, generated, published, specs, briefImages, briefTranscripts, step, texts };
 }
 
 test("parses Orbit commands", () => {
@@ -355,4 +364,53 @@ test("repo mode: paste a link, change on a branch after ship it, ask, roll back 
   await step();
   assert.equal(texts().at(-1), "Done with o/r. Back to building apps.");
   assert.equal(generated.length, 0, "repo mode never built an app");
+});
+
+test("each app only sees its own part of the chat, and going back to an old app edits that one", async () => {
+  const sharp = (await import("sharp")).default;
+  const photo = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#00ff00" } }).png().toBuffer();
+  const { api, agent, store, generated, specs, briefImages, briefTranscripts, step, texts } = setup();
+  await agent.start();
+
+  // Game 1: a cat game, with a photo.
+  api.add(HARSH, "cats are cute, use my cat");
+  api.addPhoto(HARSH, "pho_att_cat", photo);
+  api.add(WILSON, "@Orbit make flappy bird with a cat");
+  await step();
+  api.add(HARSH, "ship it");
+  await step();
+  assert.match(texts().at(-1)!, /^v1 of Cat Flap is live/);
+
+  // Game 2: snakes. Its brief, spec and photos must not include any of the cat talk.
+  api.add(HARSH, "now let's do snakes");
+  api.add(HARSH, "neon green snake pls");
+  api.add(WILSON, "@Orbit make a new snake game");
+  await step();
+  assert.match(briefTranscripts.at(-1)!, /neon green snake pls/);
+  assert.doesNotMatch(briefTranscripts.at(-1)!, /cats are cute/);
+  assert.deepEqual(briefImages.at(-1), [], "the cat photo isn't offered to the snake game");
+  api.add(WILSON, "ship it");
+  await step();
+  assert.match(texts().at(-1)!, /^v1 of Neon Snake is live/);
+  const snakeSpec = specs.at(-1)!;
+  assert.equal(snakeSpec.title, "Neon Snake");
+  assert.match(snakeSpec.transcript, /now let's do snakes/);
+  assert.doesNotMatch(snakeSpec.transcript, /cat/i);
+  assert.equal(snakeSpec.images?.length ?? 0, 0);
+
+  // Back to game 1 by name: it edits the cat game (not the snake), from the cat game's code.
+  api.add(WILSON, "@Orbit go back to the cat game and make it faster");
+  await step();
+  assert.match(texts().at(-2)!, /^On it: v2 of Cat Flap\./);
+  assert.match(texts().at(-1)!, /^v2 of Cat Flap is live/);
+  assert.match(generated.at(-1)!.previousHtml!, /make flappy bird with a cat/);
+  assert.doesNotMatch(generated.at(-1)!.previousHtml!, /snake/i);
+  // The brief for that edit didn't re-read the snake discussion either.
+  assert.doesNotMatch(briefTranscripts.at(-1)!, /snake/i);
+
+  const chat = store.chat("imessage:pho_spc_group");
+  const [cat, snake] = chat.projects;
+  assert.deepEqual([cat!.title, cat!.versions.length, snake!.title, snake!.versions.length], ["Cat Flap", 2, "Neon Snake", 1]);
+  assert.equal(chat.currentProjectId, cat!.id);
+  assert.deepEqual(chat.segments!.map((x) => x.projectId), [cat!.id, snake!.id, cat!.id, null]);
 });

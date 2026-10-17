@@ -15,8 +15,6 @@ export interface ChatImage {
   data: Buffer;
 }
 
-/** How far back to look for photos when someone asks for something. */
-const WINDOW_MS = 60 * 60 * 1000;
 const MAX_IMAGES = 4;
 const LONG_EDGE = 1024;
 
@@ -52,16 +50,23 @@ export function readCachedImage(id: string): Buffer | undefined {
   return existsSync(cached) ? readFileSync(cached) : undefined;
 }
 
+/** Whether a message's time falls in any of the ranges ([from, to); no `to` means open-ended). */
+export function inRanges(at: string, ranges: { from: string; to?: string }[]): boolean {
+  const t = Date.parse(at);
+  return ranges.some((r) => t >= Date.parse(r.from) && (!r.to || t < Date.parse(r.to)));
+}
+
 /**
- * The photos people sent in this chat in the last hour (newest four, oldest
+ * The photos people sent in these stretches of the chat (newest four, oldest
  * first), up to and including `upTo`. Photos usually arrive as their own
- * message before "@Orbit make…", so this looks back rather than only at the
- * message that mentions Orbit.
+ * message before "@Ensemble make…", so this looks back over the app's part of
+ * the chat rather than only at the message that mentions Ensemble.
  */
-export async function recentImages(args: {
+export async function imagesIn(args: {
   api: PhotonApi;
   all: PhotonMessage[];
   spaceIds: Set<string>;
+  ranges: { from: string; to?: string }[];
   upTo: PhotonMessage;
   nameOf: (m: PhotonMessage) => string;
 }): Promise<ChatImage[]> {
@@ -69,8 +74,7 @@ export async function recentImages(args: {
   const found: { id: string; m: PhotonMessage }[] = [];
   for (const m of args.all) {
     if (!args.spaceIds.has(m.space.id) || m.status === "failed") continue;
-    const at = Date.parse(m.createdAt);
-    if (at > until || at < until - WINDOW_MS) continue;
+    if (Date.parse(m.createdAt) > until || !inRanges(m.createdAt, args.ranges)) continue;
     for (const id of attachmentIds(m.content)) found.push({ id, m });
   }
   const images: ChatImage[] = [];
