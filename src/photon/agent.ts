@@ -9,6 +9,8 @@ import { transcriptLine } from "../memory/chunker";
 import { flushIndex, forgetChat, storeMessages, type IncomingMessage } from "../memory/ingest";
 import { contextForRequest, type SlotDebug } from "../memory/retrieve";
 import { createPhotonClient, type PhotonApi, type PhotonContent, type PhotonMessage, type PhotonUser } from "./api";
+import { GroupRegistry, type Group } from "./groups";
+import { startSignupServer } from "./signup";
 
 /** Each poll re-lists this far back, since createdAt order can lag arrival order. Seen ids dedupe the overlap. */
 const LOOKBACK_MS = 10_000;
@@ -92,15 +94,17 @@ export class PhotonAgent {
   private readonly brain: PhotonBrain;
   private readonly memory: PhotonMemory;
   private readonly replySpaces: ReadonlyMap<string, string>;
+  private readonly groups: GroupRegistry;
 
   constructor(
     private readonly api: PhotonApi,
     private readonly roster: Member[],
-    opts: { brain?: PhotonBrain; memory?: PhotonMemory; replySpaces?: ReadonlyMap<string, string> } = {},
+    opts: { brain?: PhotonBrain; memory?: PhotonMemory; replySpaces?: ReadonlyMap<string, string>; groups?: GroupRegistry } = {},
   ) {
     this.brain = opts.brain ?? { suggestTrip };
     this.memory = opts.memory ?? databaseMemory;
     this.replySpaces = opts.replySpaces ?? config.photonReplySpaces;
+    this.groups = opts.groups ?? new GroupRegistry();
   }
 
   /**
@@ -108,7 +112,7 @@ export class PhotonAgent {
    * everything already in Photon as seen so old messages never get answers.
    */
   async start(): Promise<void> {
-    const ids = config.PHOTON_AGENT_USER_ID ? [config.PHOTON_AGENT_USER_ID] : await this.api.listAgentUserIds();
+    const ids = config.PHOTON_AGENT_USER_ID ? [config.PHOTON_AGENT_USER_ID] : (await this.api.listAgents()).map((u) => u.id);
     if (ids.length === 0) throw new Error("This Photon project has no agent User. Set PHOTON_AGENT_USER_ID.");
     this.agentIds = new Set(ids);
 
@@ -235,10 +239,22 @@ export class PhotonAgent {
       log.warn("photon_no_agent_in_space", { messageId: m.id, spaceId: m.space.id });
       return;
     }
-    const replySpace = this.replySpaces.get(m.space.id) ?? m.space.id;
-    const redirected = replySpace !== m.space.id;
+    log.info("photon_mention", { messageId: m.id, spaceId: m.space.id, kind: m.space.kind });
+    // Memory keys a chat by the Space its messages arrive in (or its
+    // PHOTON_REPLY_SPACES target), so this chat's questions and our answers
+    // stay together even when replies go to a signup group's Space.
     const chatId = this.chatIdFor(m.space.id);
-    log.info("photon_mention", { messageId: m.id, spaceId: m.space.id, replySpaceId: redirected ? replySpace : undefined, kind: m.space.kind });
+
+    // Working out where to reply needs the project's messages from Photon.
+    // If Photon can't list them, still answer, in the Space the message came from.
+    let replySpace = this.replySpaces.get(m.space.id) ?? m.space.id;
+    let all: PhotonMessage[] | undefined;
+    try {
+      all = await this.allMessages();
+      replySpace = this.replySpaceFor(m, all);
+    } catch (err) {
+      log.error("photon_list_failed", err, { messageId: m.id });
+    }
 
     if (isForgetCommand(body)) {
       await this.forget(m, chatId, senderId, replySpace);
@@ -248,7 +264,7 @@ export class PhotonAgent {
     void this.api.setTyping(replySpace, senderId, true).catch(() => undefined);
     let reply: string;
     try {
-      const transcript = await this.chatContext(chatId, body, this.chatSpaces(m.space.id, replySpace));
+      const transcript = await this.chatContext(chatId, body, all, this.chatSpaces(m.space.id, replySpace));
       reply = await this.brain.suggestTrip({ transcript, askedBy: this.nameOf(m.sentBy), request: body });
     } catch (err) {
       log.error("photon_suggest_failed", err, { messageId: m.id });
@@ -284,7 +300,12 @@ export class PhotonAgent {
       // One reply per incoming message, even across retries and restarts.
       idempotencyKey: `reply:${m.id}`,
     });
-    log.info("photon_replied", { messageId: m.id, replyId: sent.id, status: sent.status });
+    log.info("photon_replied", {
+      messageId: m.id,
+      replyId: sent.id,
+      replySpaceId: replySpace !== m.space.id ? replySpace : undefined,
+      status: sent.status,
+    });
     // Remember what we said, so later answers can build on it.
     await this.memory
       .store([{ id: sent.id, chatId, sender: undefined, senderName: config.AGENT_NAME, body: text, sentAt: new Date(sent.createdAt), isAgent: true }])
@@ -294,18 +315,56 @@ export class PhotonAgent {
 
   /**
    * What Claude sees: the passages retrieved from memory plus the latest
-   * messages. If the memory database is unreachable, the whole chat is read
-   * from Photon instead (respecting any "forget"), so the agent still answers.
+   * messages. If the memory database is unreachable, the whole chat comes
+   * from Photon's listing instead (respecting any "forget"), so the agent
+   * still answers.
    */
-  private async chatContext(chatId: string, request: string, spaceIds: Set<string>): Promise<string> {
+  private async chatContext(chatId: string, request: string, all: PhotonMessage[] | undefined, spaceIds: Set<string>): Promise<string> {
     try {
       const { transcript, debug } = await this.memory.context(chatId, request);
       this.recent.set(chatId, { chatId, phase: "answered", lastRetrieval: debug });
       return transcript;
     } catch (err) {
       log.error("photon_memory_failed", err, { chatId });
-      return this.transcript(spaceIds, this.forgotten.get(chatId));
+      if (!all) throw err;
+      return this.transcript(all, spaceIds, this.forgotten.get(chatId));
     }
+  }
+
+  /**
+   * Every iMessage in the project, oldest first. Photon can't filter group
+   * messages by Space (they have no receivedBy), so chats are picked out of this.
+   */
+  private async allMessages(): Promise<PhotonMessage[]> {
+    const all: PhotonMessage[] = [];
+    for await (const m of this.api.listMessages({ platform: "imessage", order: "asc" })) all.push(m);
+    return all;
+  }
+
+  /**
+   * Where a reply to m goes. Photon files the messages people send in a group
+   * we started under a new Space that can't be sent to. So for a group Space
+   * we didn't start, reply in the signup group the sender is in whose members
+   * overlap most with who's talking there; the newest group wins ties.
+   */
+  private replySpaceFor(m: PhotonMessage, all: PhotonMessage[]): string {
+    const configured = this.replySpaces.get(m.space.id);
+    if (configured) return configured;
+    if (m.space.kind !== "group" || this.groups.get(m.space.id)) return m.space.id;
+
+    const talking = new Set([m.sentBy.id]);
+    for (const x of all) if (x.space.id === m.space.id && x.status === "received") talking.add(x.sentBy.id);
+    let best: Group | undefined;
+    let bestOverlap = 0;
+    for (const g of this.groups.list()) {
+      if (!g.members.some((p) => p.userId === m.sentBy.id)) continue;
+      const overlap = g.members.filter((p) => talking.has(p.userId)).length;
+      if (overlap > bestOverlap) {
+        best = g;
+        bestOverlap = overlap;
+      }
+    }
+    return best?.spaceId ?? m.space.id;
   }
 
   /** Every Space that's part of the same chat: the incoming one, where replies go, and anything else redirected there. */
@@ -316,15 +375,13 @@ export class PhotonAgent {
   }
 
   /**
-   * The whole chat as transcript lines, oldest first, read from Photon (the
-   * fallback when memory is down). Photon can't filter group messages by
-   * Space (they have no receivedBy), so this lists the project's iMessages
-   * and keeps this chat's. Failed sends never reached the chat, so they're
-   * left out, and so is anything from before a "forget".
+   * The chat as transcript lines from Photon's listing, oldest first (the
+   * fallback when memory is down). Failed sends never reached the chat, so
+   * they're left out, and so is anything from before a "forget".
    */
-  private async transcript(spaceIds: Set<string>, forgottenAt?: Date): Promise<string> {
+  private transcript(all: PhotonMessage[], spaceIds: Set<string>, forgottenAt?: Date): string {
     const lines: string[] = [];
-    for await (const m of this.api.listMessages({ platform: "imessage", order: "asc" })) {
+    for (const m of all) {
       if (!spaceIds.has(m.space.id) || m.status === "failed") continue;
       const sentAt = new Date(m.createdAt);
       if (forgottenAt && sentAt <= forgottenAt) continue;
@@ -336,7 +393,12 @@ export class PhotonAgent {
 
   private nameOf(user: PhotonUser): string {
     if (user.kind === "agent" || this.agentIds.has(user.id)) return config.AGENT_NAME;
-    return findMemberByHandle(this.roster, user.handle)?.name ?? user.metadata?.displayName ?? guestName(user.handle);
+    return (
+      findMemberByHandle(this.roster, user.handle)?.name ??
+      this.groups.nameOf(user.id) ??
+      user.metadata?.displayName ??
+      guestName(user.handle)
+    );
   }
 
   /** Reply as the agent that received the DM, or as our agent among the group's participants. */
@@ -364,8 +426,10 @@ export async function runPhotonAgent(roster: Member[]): Promise<never> {
     projectId: config.PHOTON_PROJECT_ID!,
     apiKey: config.PHOTON_API_KEY!,
   });
-  const agent = new PhotonAgent(api, roster);
+  const groups = new GroupRegistry(config.GROUPS_FILE);
+  const agent = new PhotonAgent(api, roster, { groups });
   await agent.start();
+  startSignupServer(api, groups);
   startDebugServer(agent);
   log.info("started", {
     platform: "imessage",

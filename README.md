@@ -53,6 +53,14 @@ Memory on iMessage works like this:
 2. Optionally, put everyone's phone numbers in `members.json` so replies use real names instead of "Guest 1234".
 3. Set up memory (below), then `npm run dev`. It polls Photon every 2 seconds and only answers messages that arrive after it starts.
 
+### Signup page
+
+`npm run dev` also serves a page at http://127.0.0.1:8788 where people enter their names and phone numbers. Submitting it starts an iMessage group from the dedicated line with everyone in it and a welcome that greets them by name. Signing up the same people again returns the same chat without a second welcome.
+
+- Names and numbers are saved in `data/groups.json` (gitignored). The agent uses it for names in replies, and to reply in the right chat when Photon files a group's incoming messages under a different Space (see [docs/photon-setup.md](docs/photon-setup.md)).
+- It only listens on this machine. Set `SIGNUP_HOST=0.0.0.0` to open it to your network, but anyone who can reach it can make the line text any number. Photon also caps a dedicated line at 50 new contacts a day.
+- `SIGNUP_PORT=0` turns it off.
+
 Setup details, IDs and known issues are in [docs/photon-setup.md](docs/photon-setup.md).
 
 ### Limits to know about
@@ -155,7 +163,7 @@ See [.env.example](.env.example). Storage defaults to embedded PGlite in `data/p
 
 ```
 src/index.ts          Entry point: Photon on iMessage, else the Spectrum terminal chat
-src/photon/           Photon 2.0 beta client and the iMessage loop (backfill, poll, store, retrieve, reply)
+src/photon/           Photon 2.0 beta client, the iMessage loop (backfill, poll, store, retrieve, reply), and the signup page
 src/agent/handler.ts  The trip state machine: plan → vote → book → split (terminal)
 src/agent/            commands parser, Claude calls (suggest, extract, planner, answer)
 src/memory/           chunking, local embeddings, ingestion, retrieval
