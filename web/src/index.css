@@ -1,0 +1,89 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn tokens. --primary and --ring come from the input-form component. */
+:root {
+  /* Orbit palette, matched to the hero (orbit-delivery-hero.tsx) so the page reads as one surface. */
+  --radius: 0.75rem;
+  --background: #f0f6ff;
+  --foreground: #080e2b;
+  --card: #ffffff;
+  --card-foreground: #080e2b;
+  --popover: #ffffff;
+  --popover-foreground: #080e2b;
+  --primary: #4673eb;
+  --primary-foreground: #ffffff;
+  --secondary: #e6eefc;
+  --secondary-foreground: #080e2b;
+  --muted: #e6eefc;
+  --muted-foreground: #7a87aa;
+  --accent: #e6eefc;
+  --accent-foreground: #080e2b;
+  --destructive: #d93a3a;
+  --destructive-foreground: #ffffff;
+  --border: #dce5fa;
+  --input: #d3dff7;
+  --ring: #4673eb;
+}
+
+.dark {
+  --background: #0f1a30;
+  --foreground: #f3f6ff;
+  --card: #15223d;
+  --card-foreground: #f3f6ff;
+  --popover: #15223d;
+  --popover-foreground: #f3f6ff;
+  --primary: #4f7bf0;
+  --primary-foreground: #ffffff;
+  --secondary: #1c2b4a;
+  --secondary-foreground: #f3f6ff;
+  --muted: #1c2b4a;
+  --muted-foreground: #b0bed9;
+  --accent: #1f3053;
+  --accent-foreground: #f3f6ff;
+  --destructive: #f87171;
+  --destructive-foreground: #ffffff;
+  --border: #233456;
+  --input: #2a3c61;
+  --ring: #8daaff;
+}
+
+@theme inline {
+  --font-sans: "DM Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}

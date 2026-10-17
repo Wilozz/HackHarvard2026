@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { z } from "zod";
 import { config } from "../config";
 import { log } from "../log";
@@ -148,6 +148,35 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/** The React signup page (web/), once built with `npm run web:build`. */
+const WEB_DIST = resolve("web/dist");
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".json": "application/json",
+  ".woff2": "font/woff2",
+};
+
+/** Serve a file from web/dist if the page has been built. False means not found, so the caller falls back. */
+function serveBuiltPage(path: string, res: ServerResponse): boolean {
+  if (!existsSync(resolve(WEB_DIST, "index.html"))) return false;
+  const file = resolve(WEB_DIST, path === "/" ? "index.html" : `.${decodeURIComponent(path)}`);
+  // Never serve anything outside web/dist.
+  if (!file.startsWith(WEB_DIST + sep) || !existsSync(file) || !statSync(file).isFile()) return false;
+  const immutable = file.includes(`${sep}assets${sep}`);
+  res
+    .writeHead(200, {
+      "content-type": CONTENT_TYPES[extname(file)] ?? "application/octet-stream",
+      "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+    })
+    .end(readFileSync(file));
+  return true;
+}
+
 export interface ServerExtras {
   /** Powers the live bank page at /nessie. */
   dashboard?: Dashboard;
@@ -190,6 +219,7 @@ export function startSignupServer(api: PhotonApi, groups: GroupRegistry, extras:
 
   const server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0] ?? "/";
+    if (req.method === "GET" && serveBuiltPage(path, res)) return;
     if (req.method === "GET" && path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(signupPage(config.AGENT_NAME, MAX_MEMBERS));
       return;

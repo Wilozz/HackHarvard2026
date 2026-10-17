@@ -18,7 +18,10 @@
     "db:setup": "tsx scripts/db.ts setup",
     "db:check": "tsx scripts/db.ts check",
     "db:selftest": "tsx scripts/db.ts selftest",
-    "orbit:cleanup": "tsx scripts/orbit-cleanup.ts"
+    "orbit:cleanup": "tsx scripts/orbit-cleanup.ts",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:install": "npm --prefix web install"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
