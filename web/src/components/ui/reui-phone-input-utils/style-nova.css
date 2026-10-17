@@ -1,0 +1,11 @@
+/* Styles for reui-phone-input ("nova" style). The component draws its own
+   country button and input, so react-phone-number-input's default CSS isn't
+   loaded; this only lines the pieces up. */
+.PhoneInput {
+  display: flex;
+  align-items: stretch;
+}
+.PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+}

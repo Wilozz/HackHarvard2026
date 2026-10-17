@@ -5,3 +5,4 @@ data/pglite/
 data/models/
 *.log
 data/groups.json
+web/dist/
