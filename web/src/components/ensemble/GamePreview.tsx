@@ -3,11 +3,11 @@ import { AnimatePresence, motion } from "motion/react";
 import { Lock, RotateCcw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { landingRow, turnOf, type GameConfig, type Piece } from "./connect-four";
-import { OrbitMark } from "./OrbitLogo";
+import { EnsembleMark } from "./EnsembleLogo";
 
 export type Phase = "empty" | "building" | "ready";
 
-const spring = { type: "spring", stiffness: 260, damping: 26 } as const;
+const spring = { type: "spring", stiffness: 190, damping: 24 } as const;
 
 const codeLines = [
   "import { useState } from 'react'",
@@ -44,7 +44,7 @@ function useSize<T extends HTMLElement>() {
 function Building() {
   const [shown, setShown] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setShown((n) => Math.min(n + 1, codeLines.length)), 150);
+    const id = setInterval(() => setShown((n) => Math.min(n + 1, codeLines.length)), 210);
     return () => clearInterval(id);
   }, []);
   return (
@@ -60,7 +60,7 @@ function Building() {
         Claude is writing your game…
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-muted">
-        <motion.div className="h-full rounded-full bg-primary" initial={{ width: "4%" }} animate={{ width: "100%" }} transition={{ duration: 2.4, ease: "easeInOut" }} />
+        <motion.div className="h-full rounded-full bg-primary" initial={{ width: "4%" }} animate={{ width: "100%" }} transition={{ duration: 3.3, ease: "easeInOut" }} />
       </div>
       <pre className="flex-1 overflow-hidden font-mono text-[12px] leading-6 text-muted-foreground">
         {codeLines.slice(0, shown).map((line, i) => (
@@ -78,7 +78,7 @@ function Placeholder() {
   return (
     <motion.div key="empty" className="flex size-full flex-col items-center justify-center gap-3 text-center" exit={{ opacity: 0 }}>
       <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 2.4, repeat: Infinity }}>
-        <OrbitMark className="size-14 text-primary" />
+        <EnsembleMark className="size-14 text-primary" />
       </motion.div>
       <p className="text-sm text-muted-foreground">Your group's app shows up here</p>
     </motion.div>
@@ -168,7 +168,7 @@ function Board({ config, pieces, win, onDrop, onReset }: BoardProps) {
                   transition={{
                     y: { type: "spring", stiffness: 420, damping: 18 },
                     opacity: { duration: 0.2 },
-                    backgroundColor: { duration: 0.6 },
+                    backgroundColor: { duration: 0.9 },
                     scale: winning && config.winGlow ? { duration: 1.1, repeat: Infinity } : spring,
                     default: spring,
                   }}
@@ -223,7 +223,7 @@ interface GamePreviewProps extends BoardProps {
   className?: string;
 }
 
-/** A browser window showing the app Orbit built, updated live as the chat asks for changes. */
+/** A browser window showing the app Ensemble built, updated live as the chat asks for changes. */
 export function GamePreview({ phase, version, toast, className, ...board }: GamePreviewProps) {
   return (
     <div className={cn("relative flex flex-col overflow-hidden rounded-[26px] border bg-card/85 shadow-[0_30px_120px_-30px_rgba(24,60,115,0.45)] backdrop-blur-xl", className)}>
@@ -235,7 +235,7 @@ export function GamePreview({ phase, version, toast, className, ...board }: Game
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
           <Lock className="size-3 shrink-0" />
-          <span className="truncate">orbit.app/p/connect-four</span>
+          <span className="truncate">ensemble.app/p/connect-four</span>
         </div>
         <AnimatePresence mode="popLayout">
           {phase === "ready" && (

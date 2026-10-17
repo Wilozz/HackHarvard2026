@@ -4,14 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { MotionConfig } from "motion/react";
-import { Hero } from "@/components/orbit/Hero";
+import { Hero } from "@/components/ensemble/Hero";
 import { PhoneInput } from "@/components/ui/reui-phone-input";
 
 // The signup form: everyone's name and number in, one iMessage group chat out.
 // Same contract as the server's fallback page (src/photon/signup-page.ts):
 // POST /api/groups {consent, members: [{name, phone}]}.
 
-const BRAND = "Orbit";
+const BRAND = "Ensemble";
 // The name people @mention in iMessage. Must match AGENT_NAME in the agent's .env.
 const MENTION = "Tripchat";
 const MIN_PEOPLE = 2;

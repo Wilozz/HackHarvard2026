@@ -6,10 +6,12 @@ import { ChatPanel, type ChatMessage } from "./ChatPanel";
 import { findWin, landingRow, turnOf, type GameConfig, type Piece } from "./connect-four";
 import { GamePreview, type Phase } from "./GamePreview";
 import { OrbitBackground } from "./OrbitBackground";
-import { OrbitLogo } from "./OrbitLogo";
+import { EnsembleLogo } from "./EnsembleLogo";
 import { firstVersion, script, type Speaker } from "./script";
 
 const STOP = Symbol("stop");
+/** Stretches every pause in the script so each chat message and change has time to land. */
+const PACE = 1.35;
 
 const rise = (delay: number) => ({
   initial: { opacity: 0, y: 18, filter: "blur(6px)" },
@@ -52,7 +54,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
   const showToast = useCallback((text: string) => {
     const id = nextId.current++;
     setToast({ id, text });
-    setTimeout(() => setToast((t) => (t?.id === id ? undefined : t)), 2400);
+    setTimeout(() => setToast((t) => (t?.id === id ? undefined : t)), 3200);
   }, []);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
     const timers: ReturnType<typeof setTimeout>[] = [];
     const sleep = (ms: number) =>
       new Promise<void>((resolve, reject) => {
-        timers.push(setTimeout(() => (cancelled ? reject(STOP) : resolve()), ms));
+        timers.push(setTimeout(() => (cancelled ? reject(STOP) : resolve()), ms * PACE));
       });
 
     setMessages([]);
@@ -127,7 +129,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
       <OrbitBackground />
 
       <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
-        <OrbitLogo />
+        <EnsembleLogo />
         <Button onClick={onStart} className="rounded-full px-5">
           Start a group chat
         </Button>
@@ -138,12 +140,10 @@ export function Hero({ onStart }: { onStart: () => void }) {
           Build apps from your group chat
         </motion.p>
         <motion.h1 {...rise(0.15)} className="max-w-4xl text-[clamp(44px,7vw,92px)] leading-[0.98] font-semibold tracking-[-0.055em]">
-          Everything revolves
-          <br />
-          around <em className="font-serif font-normal tracking-[-0.02em] text-primary italic dark:text-[#8daaff]">your group.</em>
+          Collaborative <em className="font-serif font-normal tracking-[-0.02em] text-primary italic dark:text-[#8daaff]">prompting.</em>
         </motion.h1>
         <motion.p {...rise(0.28)} className="mt-6 max-w-xl text-[clamp(16px,1.4vw,19px)] leading-relaxed text-muted-foreground">
-          Text an idea to your iMessage group. Orbit builds it into a real app, and every message after that changes it live.
+          Text an idea to your iMessage group. Ensemble builds it into a real app, and every message after that changes it live.
         </motion.p>
         <motion.div {...rise(0.4)} className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button size="lg" onClick={onStart} className="h-12 rounded-full px-7 text-base">
