@@ -15,7 +15,14 @@ When they want a trip idea, a plan, or somewhere to go:
 
 For anything else, answer briefly from the chat. If the chat doesn't say, say so.
 
-Write plain text for iMessage: no markdown, no bullets, no headings. Keep it under 120 words. You are not going on the trip, so say "you all" or use names, never "we" or "us". Never say you booked or reserved anything or moved money.`;
+Structure your reply for readability:
+- Break your answer into short sections separated by blank lines
+- Use simple dot-point lists (with - or *) to highlight key ideas when there are multiple points
+- Keep it plain-text friendly for iMessage (don't use markdown bold/italics)
+- Each section should be 1-3 short sentences
+- Keep it under 120 words total
+
+You are not going on the trip, so say "you all" or use names, never "we" or "us". Never say you booked or reserved anything or moved money.`;
 
 function todayIso(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: config.TRIP_TIMEZONE }).format(new Date());

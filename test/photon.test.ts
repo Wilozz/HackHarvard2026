@@ -427,7 +427,7 @@ test("reads the chat from Photon when the memory database is down", async () => 
   assert.equal(api.sent[0]!.text, "still here");
 });
 
-test("messageText reads text, groups and attachments", () => {
+test("messageText reads text, groups and attachments", async () => {
   assert.equal(messageText({ type: "text", text: " hi￼ " }), "hi");
   assert.equal(messageText({ type: "attachment" }), "[shared a file]");
   assert.equal(
@@ -435,4 +435,5 @@ test("messageText reads text, groups and attachments", () => {
     "[shared a file] look at this place",
   );
   assert.equal(messageText({ type: "space.typing.update" }), undefined);
+  await (await getDb()).close();
 });
