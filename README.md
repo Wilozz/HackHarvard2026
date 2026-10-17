@@ -3,7 +3,7 @@
 An AI travel agent that lives in your iMessage group chat. It remembers what the group says about a trip, proposes options everyone can afford, calls the hotel to hold the rooms, and splits the bill through Capital One. HackHarvard 2026.
 
 ```
-iMessage group ⇄ Photon Spectrum ⇄ Tripchat
+iMessage group ⇄ Photon 2.0 beta ⇄ Tripchat
                                     ├─ memory: every message → chunks → local embeddings → Postgres + pgvector
                                     ├─ brain: Claude (claude-opus-5-5) extracts trip facts and plans options
                                     ├─ voice: Retell places the reservation call (mock by default)
@@ -39,14 +39,18 @@ The terminal UI's first chat is `terminal:chat-1`, which is what `npm run seed:c
 
 ## Going live on iMessage
 
-1. Create a project at [app.photon.codes](https://app.photon.codes), then put `PHOTON_PROJECT_ID` and `PHOTON_PROJECT_SECRET` in `.env`. Tripchat switches from the terminal to iMessage automatically.
-2. Put everyone's real phone numbers in `members.json`. That's how the agent knows who's who, who can vote, and whose money moves.
-3. Create the group chat with the Tripchat number in it from the start (see the limits below).
+iMessage runs on **Photon 2.0 beta** (the HTTP API at `api.photon.codes/v1`), not Spectrum. For now it does one thing: mention `@Tripchat` in the group (or text it directly) and ask for a trip idea, and it reads the whole chat and replies with a suggestion. There's no retrieval yet; every mention re-reads the full chat from Photon. The plan → vote → book → split flow still runs only in the terminal.
+
+1. Put `PHOTON_PROJECT_ID` (`pho_prj_...`) and `PHOTON_API_KEY` (`pho_sk_...`) in `.env`. Tripchat switches from the terminal to iMessage automatically.
+2. Optionally, put everyone's phone numbers in `members.json` so replies use real names instead of "Guest 1234".
+3. `npm run dev`. It polls Photon every 2 seconds and only answers messages that arrive after it starts.
+
+Setup details, IDs and known issues are in [docs/photon-setup.md](docs/photon-setup.md).
 
 ### Limits to know about
 
-- **Group chats need a dedicated line.** On Photon's Free and Pro plans the agent's number comes from a shared pool and can differ per person, and every recipient must be registered as a project user first. Group chats need a dedicated (Business) line. Ask Photon for one at the booth.
-- **No history backfill.** Spectrum has no message-history API, so the agent only knows messages sent while it's running. That's why the demo chat must include the agent from the start. While it's running, every message is stored and indexed.
+- **Group chats need a dedicated line.** Shared pool lines (Free and Pro) are DM-only. Our project has a dedicated line.
+- **A 202 isn't delivery.** Photon accepts a send, then delivers it later. About 20 seconds after each reply, Tripchat checks the real status and logs `photon_send_failed` with Photon's failure code if it didn't go through.
 - **Plain text only.** iMessage strips Markdown, so all replies are plain text.
 
 ## How it works
@@ -118,9 +122,10 @@ See [.env.example](.env.example). Storage defaults to embedded PGlite in `data/p
 ## Layout
 
 ```
-src/index.ts          Spectrum app, message loop, per-chat queues, sender identity
-src/agent/handler.ts  The trip state machine: plan → vote → book → split
-src/agent/            commands parser, Claude calls (extract, planner, answer)
+src/index.ts          Entry point: Photon on iMessage, else the Spectrum terminal chat
+src/photon/           Photon 2.0 beta client and the iMessage loop (poll, mention, full-chat suggestion)
+src/agent/handler.ts  The trip state machine: plan → vote → book → split (terminal)
+src/agent/            commands parser, Claude calls (suggest, extract, planner, answer)
 src/memory/           chunking, local embeddings, ingestion, retrieval
 src/bank/             Nessie client and mock bank, both on a local ledger
 src/voice/            Retell and mock reservation calls
