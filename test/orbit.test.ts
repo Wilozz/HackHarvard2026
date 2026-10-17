@@ -91,7 +91,7 @@ class FakePhoton implements PhotonApi {
   attachments = new Map<string, Buffer>();
 }
 
-function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean } = {}) {
+function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean; repos?: ConstructorParameters<typeof OrbitService>[5]; repoPlan?: (request: string) => Awaited<ReturnType<typeof import("../src/orbit/repoPlan").writeRepoPlan>> } = {}) {
   const api = new FakePhoton();
   const generated: GenerateArgs[] = [];
   const specs: { title: string; brief: string; transcript: string; images?: { label: string }[] }[] = [];
@@ -130,7 +130,9 @@ function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean } = {}) {
         return `<!doctype html><html><body>${args.brief}${args.errors ? " (fixed)" : ""}${args.previousHtml ? kept : photos}</body></html>`;
       },
       checkApp: async () => ({ ran: true, errors: qualityRuns.shift() ?? [] }),
+      writeRepoPlan: async ({ request }) => opts.repoPlan!(request),
     },
+    opts.repos,
   );
   const agent = new PhotonAgent(api, [WILSON, HARSH], {
     brain: { suggestTrip: async () => "unused" },
@@ -277,4 +279,79 @@ test("photos from the chat reach Claude and end up inside the app", async () => 
   assert.match(generated[1]!.previousHtml!, /<img src="ORBIT_IMAGE_1">/);
   assert.doesNotMatch(generated[1]!.previousHtml!, /base64/);
   assert.match(published.at(-1)!.html, /<img src="data:image\/jpeg;base64,/);
+});
+
+test("repo mode: paste a link, change on a branch after ship it, ask, roll back with confirmation", async () => {
+  const calls: string[] = [];
+  const branch = { name: "ensemble/dark-mode-ab12", title: "Add dark mode", base: "main", createdBy: "Harsh", commits: [] as { sha: string; message: string; by: string; at: string }[] };
+  const repos = {
+    async attach(ref: { owner: string; name: string; url: string }) {
+      calls.push(`attach ${ref.owner}/${ref.name}`);
+      return { ...ref, defaultBranch: "main", canPush: true, sandboxId: "sbx", dir: "/repo", summary: "A small Vite app.", branches: [], currentBranch: undefined };
+    },
+    async ask(_state: unknown, question: string) {
+      calls.push(`ask ${question}`);
+      return "Last commit: 1a2b3c4 Add dark mode (asked by Harsh).";
+    },
+    async change(state: { branches: typeof branch[]; currentBranch?: string }, args: { brief: string; requestedBy: string }) {
+      calls.push(`change ${args.brief} by ${args.requestedBy}`);
+      branch.commits.push({ sha: "1a2b3c4", message: "Add dark mode toggle", by: args.requestedBy, at: "" });
+      state.branches.push(branch);
+      state.currentBranch = branch.name;
+      Object.assign(branch, { prUrl: "https://github.com/o/r/pull/7", prNumber: 7 });
+      return { changed: true, branch, commit: branch.commits[0], stat: "2 files changed, 30 insertions(+)", report: "Added a toggle. Tests pass.", pushed: true };
+    },
+    async rollback(_s: unknown, args: { mode: string; branch?: { name: string } }) {
+      calls.push(`rollback ${args.mode} on ${args.branch?.name}`);
+      const commit = { sha: "9f8e7d6", message: 'Revert "Add dark mode toggle"', by: "Wilson", at: "" };
+      branch.commits.push(commit); // the real worker records every commit it makes on the branch
+      return { changed: true, branch, commit, stat: "2 files changed", report: "Undid 1a2b3c4.", pushed: true };
+    },
+  };
+  const plans: Record<string, Awaited<ReturnType<typeof import("../src/orbit/repoPlan").writeRepoPlan>>> = {
+    "add a dark mode toggle": { action: "change", title: "Add dark mode", brief: "Add a dark mode toggle to the header.", rollbackMode: "none", rollbackCommit: "", branch: "" },
+    "what was the last commit?": { action: "question", title: "", brief: "What was the last commit?", rollbackMode: "none", rollbackCommit: "", branch: "" },
+    "undo that": { action: "rollback", title: "Undo dark mode", brief: "", rollbackMode: "undo", rollbackCommit: "", branch: "" },
+    "we're done with the repo": { action: "leave", title: "", brief: "", rollbackMode: "none", rollbackCommit: "", branch: "" },
+  };
+  const { api, agent, generated, step, texts } = setup({ repos: repos as never, repoPlan: (r) => plans[r]! });
+  await agent.start();
+
+  api.add(WILSON, "@Orbit work on https://github.com/o/r");
+  await step();
+  assert.match(texts()[0]!, /^Cloning o\/r into a sandbox/);
+  assert.match(texts()[1]!, /^Cloned o\/r \(main\)\. A small Vite app\./);
+
+  api.add(HARSH, "@Orbit add a dark mode toggle");
+  await step();
+  assert.match(texts()[2]!, /Add a dark mode toggle to the header\.\n\nI'll do it on a new branch off main and open a pull request\. Reply "ship it"/);
+  assert.equal(calls.filter((c) => c.startsWith("change")).length, 0, "nothing changes before ship it");
+  api.add(STRANGER, "ship it");
+  await step();
+  assert.equal(calls.filter((c) => c.startsWith("change")).length, 0, "a stranger can't approve it");
+  api.add(WILSON, "ship it");
+  await step();
+  assert.equal(calls.at(-1), "change Add a dark mode toggle to the header. by Harsh");
+  assert.match(texts().at(-1)!, /^Done on ensemble\/dark-mode-ab12: 2 files changed, 30 insertions\(\+\) \(commit 1a2b3c4, "Add dark mode toggle"\)\.\n\nAdded a toggle\. Tests pass\.\n\nPull request: https:\/\/github\.com\/o\/r\/pull\/7/);
+
+  api.add(HARSH, "@Orbit what was the last commit?");
+  await step();
+  assert.equal(texts().at(-1), "Last commit: 1a2b3c4 Add dark mode (asked by Harsh).");
+
+  api.add(WILSON, "@Orbit undo that");
+  await step();
+  assert.match(texts().at(-1)!, /I'll undo the latest commit on ensemble\/dark-mode-ab12 \(https:\/\/github\.com\/o\/r\/pull\/7\), as a new commit/);
+  api.add(WILSON, "ship it");
+  await step();
+  assert.equal(calls.at(-1), "rollback undo on ensemble/dark-mode-ab12");
+  assert.match(texts().at(-1)!, /Undid 1a2b3c4\./);
+
+  api.add(WILSON, "@Orbit versions");
+  await step();
+  assert.equal(texts().at(-1), "o/r\nAdd dark mode: ensemble/dark-mode-ab12 https://github.com/o/r/pull/7 (2 commits)");
+
+  api.add(WILSON, "@Orbit we're done with the repo");
+  await step();
+  assert.equal(texts().at(-1), "Done with o/r. Back to building apps.");
+  assert.equal(generated.length, 0, "repo mode never built an app");
 });

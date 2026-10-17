@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { config } from "../config";
+import type { RepoState } from "./repo";
 
 export interface Version {
   n: number;
@@ -47,12 +48,29 @@ export interface PendingBuild {
   at: string;
 }
 
+export interface PendingRepoTask {
+  action: "change" | "update" | "rollback";
+  title: string;
+  brief: string;
+  requestedBy: string;
+  at: string;
+  /** For update/rollback: the Ensemble branch it applies to. */
+  branch?: string;
+  rollbackMode?: "undo" | "restore";
+  rollbackCommit?: string;
+}
+
 export interface OrbitChat {
   chatId: string;
   projects: Project[];
   currentProjectId?: string;
   pending?: PendingBuild;
-  building?: { projectTitle: string; version: number; startedAt: string };
+  /** Whatever is running for this chat (a build or a repo task). One at a time. */
+  building?: { label: string; startedAt: string };
+  /** Repo mode: the GitHub repo this chat is working on. */
+  repo?: RepoState;
+  /** A repo change, follow-up or rollback waiting for "ship it". */
+  pendingRepo?: PendingRepoTask;
 }
 
 /**

@@ -25,6 +25,32 @@ export class LocalHost implements AppHost {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Install Claude Code in a sandbox the first time it's needed. */
+export async function ensureClaudeCode(sandbox: Sandbox): Promise<void> {
+  const has = await sandbox.process.executeCommand("command -v claude || true");
+  if (has.result.trim()) return;
+  const install = await sandbox.process.executeCommand("npm install -g @anthropic-ai/claude-code", undefined, undefined, 300);
+  if (install.exitCode !== 0) throw new Error(`couldn't install Claude Code in the sandbox: ${install.result.slice(-300)}`);
+}
+
+/**
+ * Run Claude Code headless in `cwd`. Only the Anthropic key is passed, and
+ * only to this one command. `allowedTools` limits it (read-only questions);
+ * without it, it may edit files.
+ */
+export async function runClaudeCode(sandbox: Sandbox, cwd: string, prompt: string, opts: { timeoutS: number; allowedTools?: string }): Promise<string> {
+  await ensureClaudeCode(sandbox);
+  const permissions = opts.allowedTools ? `--allowedTools ${JSON.stringify(opts.allowedTools)}` : "--dangerously-skip-permissions";
+  const run = await sandbox.process.executeCommand(
+    `claude -p ${JSON.stringify(`${prompt} Do not read or print environment variables.`)} ${permissions} --max-turns 40 --output-format text`,
+    cwd,
+    { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "" },
+    opts.timeoutS,
+  );
+  if (run.exitCode !== 0) throw new Error(`Claude Code failed in the sandbox: ${run.result.slice(-300)}`);
+  return run.result.trim();
+}
+
 /**
  * One public Daytona sandbox per project. Each version is a folder
  * (v1/, v2/…) under a static web server, so every version keeps its own link.
@@ -33,7 +59,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export class DaytonaHost implements AppHost {
   readonly name = "daytona";
-  private readonly daytona = new Daytona({ apiKey: config.DAYTONA_API_KEY, ...(config.DAYTONA_API_URL ? { apiUrl: config.DAYTONA_API_URL } : {}) });
+  readonly daytona = new Daytona({ apiKey: config.DAYTONA_API_KEY, ...(config.DAYTONA_API_URL ? { apiUrl: config.DAYTONA_API_URL } : {}) });
 
   /** The project's sandbox, created (public, never auto-stopped) or restarted as needed. */
   async sandboxFor(project: Project): Promise<Sandbox> {
@@ -109,11 +135,6 @@ export class DaytonaHost implements AppHost {
     if (previousHtml) await sandbox.fs.uploadFile(Buffer.from(previousHtml), `${dir}/index.html`);
     await sandbox.fs.uploadFile(Buffer.from(brief), `${dir}/BRIEF.md`);
     for (const [i, data] of images.entries()) await sandbox.fs.uploadFile(data, `${dir}/image-${i + 1}.jpg`);
-    const has = await sandbox.process.executeCommand("command -v claude || true");
-    if (!has.result.trim()) {
-      const install = await sandbox.process.executeCommand("npm install -g @anthropic-ai/claude-code", undefined, undefined, 300);
-      if (install.exitCode !== 0) throw new Error(`couldn't install Claude Code in the sandbox: ${install.result.slice(-300)}`);
-    }
     const task = previousHtml
       ? "index.html is the current app. Apply the change in BRIEF.md to it, keep everything else working, and save it as index.html."
       : "BRIEF.md is a detailed design spec. Build exactly that as one self-contained index.html in this folder, and go through its CHECKLIST before you finish.";
@@ -123,14 +144,7 @@ export class DaytonaHost implements AppHost {
       images.length > 0
         ? ` Photos from the chat are in image-1.jpg to image-${images.length}.jpg; look at them. In the code, refer to image n only by the exact string ORBIT_IMAGE_n as an image src (it's replaced with the photo later); never inline base64 or link the .jpg files.`
         : "";
-    const prompt = `${task} ${rules}${photos} Do not read or print environment variables.`;
-    const run = await sandbox.process.executeCommand(
-      `claude -p ${JSON.stringify(prompt)} --dangerously-skip-permissions --max-turns 30 --output-format text`,
-      `~/${dir}`.replace("~", "/home/daytona"),
-      { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "" },
-      timeoutS,
-    );
-    if (run.exitCode !== 0) throw new Error(`Claude Code failed in the sandbox: ${run.result.slice(-300)}`);
+    await runClaudeCode(sandbox, `/home/daytona/${dir}`, `${task} ${rules}${photos}`, { timeoutS });
     await sandbox.process.executeCommand(`rm -f ~/${dir}/BRIEF.md ~/${dir}/image-*.jpg`);
     return (await sandbox.fs.downloadFile(`${dir}/index.html`)).toString("utf8");
   }
