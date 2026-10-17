@@ -16,6 +16,16 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Whether the text mentions the agent ("@Tripchat" or "Tripchat"), and the text with the mention removed. */
+export function findMention(text: string, agentName: string): { mentioned: boolean; body: string } {
+  const normalized = text.replace(/[‘’]/g, "'").trim();
+  const mention = new RegExp(`(^|\\s)@?${escapeRegExp(agentName)}\\b[,:]?`, "i");
+  return {
+    mentioned: mention.test(normalized),
+    body: normalized.replace(mention, " ").replace(/\s+/g, " ").trim(),
+  };
+}
+
 const VOTE = /^(?:i\s+)?(?:vote(?:\s+for)?|option|pick|go\s+with|choose)\s*#?\s*(\d)\b/;
 const APPROVE = /^(?:i\s+)?approved?\b/;
 const APPROVE_ONLY = /^(?:i\s+)?approved?[.!]*$/;
@@ -29,10 +39,7 @@ export function parseCommand(
   text: string,
   opts: { agentName: string; requireMention: boolean; phase: Phase },
 ): Command {
-  const normalized = text.replace(/[‘’]/g, "'").trim();
-  const mention = new RegExp(`(^|\\s)@?${escapeRegExp(opts.agentName)}\\b[,:]?`, "i");
-  const mentioned = mention.test(normalized);
-  const body = normalized.replace(mention, " ").replace(/\s+/g, " ").trim();
+  const { mentioned, body } = findMention(text, opts.agentName);
   const lower = body.toLowerCase().replace(/[?!.]+$/, "");
 
   const vote = lower.match(VOTE);

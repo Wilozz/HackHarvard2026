@@ -1,5 +1,4 @@
 import { Spectrum, type Message, type Space } from "spectrum-ts";
-import { imessage } from "spectrum-ts/providers/imessage";
 import { terminal } from "spectrum-ts/providers/terminal";
 import { TripAgent, type ChatContext, type Sender } from "./agent/handler";
 import { getBank } from "./bank";
@@ -9,6 +8,7 @@ import { getDb } from "./db";
 import { log } from "./log";
 import { findMemberByHandle, findMemberByName, guestName, loadRoster } from "./members";
 import { storeMessage } from "./memory/ingest";
+import { runPhotonAgent } from "./photon/agent";
 
 const roster = loadRoster();
 const bank = roster.length > 0 ? getBank() : undefined;
@@ -24,14 +24,10 @@ function enqueue(chatId: string, task: () => Promise<void>): void {
 
 const agent = new TripAgent(roster, bank, enqueue);
 
-async function createApp() {
-  if (config.platform === "imessage") {
-    return Spectrum({
-      projectId: config.PHOTON_PROJECT_ID!,
-      projectSecret: config.PHOTON_PROJECT_SECRET!,
-      providers: [imessage.config()],
-    });
-  }
+// The terminal runs the full plan → vote → book → split flow through Spectrum.
+// iMessage runs on Photon 2.0 beta instead (src/photon), which only does trip
+// suggestions for now.
+async function createTerminalApp() {
   return Spectrum({
     providers: [
       terminal.config({
@@ -39,12 +35,6 @@ async function createApp() {
       }),
     ],
   });
-}
-
-function isGroupSpace(message: Message, space: Space): boolean {
-  if (message.platform === "imessage") return imessage(space).type === "group";
-  // The terminal stands in for a group chat, so mentions are required there too.
-  return true;
 }
 
 /**
@@ -78,7 +68,8 @@ function messageText(message: Message): string | undefined {
 
 async function handle(space: Space, message: Message): Promise<void> {
   const chatId = `${message.platform}:${space.id}`;
-  const ctx: ChatContext = { chatId, platform: message.platform, isGroup: isGroupSpace(message, space), space };
+  // The terminal stands in for a group chat, so mentions are required there too.
+  const ctx: ChatContext = { chatId, platform: message.platform, isGroup: true, space };
   const raw = messageText(message);
 
   if (message.direction === "outbound") {
@@ -110,8 +101,12 @@ async function handle(space: Space, message: Message): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (config.platform === "imessage") {
+    await runPhotonAgent(roster);
+    return;
+  }
   await getDb();
-  const app = await createApp();
+  const app = await createTerminalApp();
   startDebugServer(agent);
   log.info("started", {
     platform: config.platform,
