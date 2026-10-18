@@ -15,6 +15,11 @@ const FALLBACK = {
 
 type Effort = "low" | "medium" | "high";
 
+/** The server-side refusal fallback, for models that support it (Haiku has none). */
+function fallbackFor(model: string) {
+  return /haiku/i.test(model) ? {} : FALLBACK;
+}
+
 /** A JPEG to show Claude, with a short label ("Image 1, sent by Harsh"). */
 export interface LlmImage {
   label: string;
@@ -52,11 +57,13 @@ export async function structured<S extends z.ZodType>(args: {
   schema: S;
   effort: Effort;
   images?: LlmImage[];
+  model?: string;
 }): Promise<z.infer<S>> {
+  const model = args.model ?? config.CLAUDE_MODEL;
   const res = await client.beta.messages.parse({
-    model: config.CLAUDE_MODEL,
+    model,
     max_tokens: 16000,
-    ...FALLBACK,
+    ...fallbackFor(model),
     system: args.system,
     messages: [{ role: "user", content: userContent(args.user, args.images) }],
     output_config: { effort: args.effort, format: betaZodOutputFormat(args.schema) },
@@ -68,10 +75,11 @@ export async function structured<S extends z.ZodType>(args: {
 
 /** One request with a plain-text reply. */
 export async function complete(args: { system: string; user: string; effort: Effort; model?: string; images?: LlmImage[] }): Promise<string> {
+  const model = args.model ?? config.CLAUDE_MODEL;
   const res = await client.beta.messages.create({
-    model: args.model ?? config.CLAUDE_MODEL,
+    model,
     max_tokens: 16000,
-    ...FALLBACK,
+    ...fallbackFor(model),
     system: args.system,
     messages: [{ role: "user", content: userContent(args.user, args.images) }],
     output_config: { effort: args.effort },
@@ -90,11 +98,12 @@ export async function complete(args: { system: string; user: string; effort: Eff
  * A long plain-text reply (a whole generated app), streamed so a large
  * max_tokens can't hit the HTTP timeout. Only the final text is returned.
  */
-export async function streamText(args: { system: string; user: string; effort: Effort; maxTokens?: number; images?: LlmImage[] }): Promise<string> {
+export async function streamText(args: { system: string; user: string; effort: Effort; maxTokens?: number; images?: LlmImage[]; model?: string }): Promise<string> {
+  const model = args.model ?? config.CLAUDE_MODEL;
   const stream = client.beta.messages.stream({
-    model: config.CLAUDE_MODEL,
+    model,
     max_tokens: args.maxTokens ?? 64000,
-    ...FALLBACK,
+    ...fallbackFor(model),
     system: args.system,
     messages: [{ role: "user", content: userContent(args.user, args.images) }],
     output_config: { effort: args.effort },

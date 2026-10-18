@@ -1,7 +1,7 @@
 import type { Sandbox } from "@daytonaio/sdk";
 import { config } from "../config";
 import { log } from "../log";
-import { getRepo, openPullRequest, type RepoRef } from "./github";
+import { deleteRemoteBranch, getPullRequest, getRepo, githubToken, mergePullRequest, openPullRequest, type PullRequestStatus, type RepoRef } from "./github";
 import { runClaudeCode, type DaytonaHost } from "./hosts";
 
 export interface RepoCommit {
@@ -20,6 +20,8 @@ export interface RepoBranch {
   prUrl?: string;
   prNumber?: number;
   commits: RepoCommit[];
+  /** Set once Ensemble has merged its pull request. */
+  merged?: { sha: string; by: string; at: string };
 }
 
 export interface RepoState extends RepoRef {
@@ -55,7 +57,11 @@ const UNTRUSTED =
 
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** Branch names Ensemble creates: ensemble/<words>-<id>. */
+/**
+ * Branch names Ensemble creates: ensemble-<words>-<id>. No slash: git can't
+ * have both "ensemble" and "ensemble/x", and repos may already have a branch
+ * called "ensemble".
+ */
 export function branchName(title: string): string {
   const slug = title
     .toLowerCase()
@@ -63,7 +69,7 @@ export function branchName(title: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 40)
     .replace(/-+$/, "");
-  return `ensemble/${slug || "change"}-${Math.random().toString(36).slice(2, 6)}`;
+  return `ensemble-${slug || "change"}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 /**
@@ -88,7 +94,8 @@ export class RepoWorker {
   }
 
   private creds(): [string, string] | [undefined, undefined] {
-    return config.GITHUB_TOKEN ? ["x-access-token", config.GITHUB_TOKEN] : [undefined, undefined];
+    const token = githubToken();
+    return token ? ["x-access-token", token] : [undefined, undefined];
   }
 
   /** Clone the repo into a new sandbox and have Claude Code summarize it. */
@@ -111,7 +118,7 @@ export class RepoWorker {
       { timeoutS: 300, allowedTools: READ_ONLY_TOOLS },
     );
     log.info("repo_attached", { repo: `${ref.owner}/${ref.name}`, sandboxId: sandbox.id, canPush: info.canPush });
-    return { ...ref, defaultBranch: info.defaultBranch, canPush: info.canPush && !!config.GITHUB_TOKEN, sandboxId: sandbox.id, dir, summary, branches: [] };
+    return { ...ref, defaultBranch: info.defaultBranch, canPush: info.canPush && !!githubToken(), sandboxId: sandbox.id, dir, summary, branches: [] };
   }
 
   /** Answer a question about the code or its history (commits, diffs, comparisons) without changing anything. */
@@ -150,9 +157,17 @@ export class RepoWorker {
 
   /** Push the branch and open (or reuse) its pull request. Only ever Ensemble's own branches. */
   private async push(sandbox: Sandbox, state: RepoState, branch: RepoBranch): Promise<boolean> {
-    if (!branch.name.startsWith("ensemble/") || branch.name === state.defaultBranch) throw new Error(`refusing to push ${branch.name}`);
-    if (!state.canPush) return false;
+    // Branches from before the no-slash naming get renamed first ("ensemble/x" can't coexist with a branch named "ensemble").
+    if (branch.name.startsWith("ensemble/")) {
+      const renamed = branch.name.replace(/^ensemble\//, "ensemble-");
+      await this.sh(sandbox, state.dir, `git branch -m ${q(branch.name)} ${q(renamed)}`);
+      if (state.currentBranch === branch.name) state.currentBranch = renamed;
+      branch.name = renamed;
+    }
+    if (!branch.name.startsWith("ensemble-") || branch.name === state.defaultBranch) throw new Error(`refusing to push ${branch.name}`);
     const [user, pass] = this.creds();
+    if (!pass) return false;
+    state.canPush = true;
     await sandbox.git.push(state.dir, user, pass, branch.name, "origin", true);
     const pr = await openPullRequest(state, {
       head: branch.name,
@@ -171,6 +186,60 @@ export class RepoWorker {
    * runs tests but never commits; Ensemble commits with its message, pushes
    * and opens the PR.
    */
+  /** Why this branch's pull request can't be merged right now, or undefined if it can. Also returns GitHub's view of it. */
+  async mergeCheck(state: RepoState, branch: RepoBranch): Promise<{ problem?: string; pr?: PullRequestStatus }> {
+    if (branch.merged) return { problem: `${branch.title} is already merged.` };
+    if (!branch.prNumber) return { problem: `${branch.title} doesn't have a pull request yet. Say "push it" first.` };
+    if (!/^ensemble[-/]/.test(branch.name)) return { problem: `I only merge my own pull requests.` };
+    const pr = await getPullRequest(state, branch.prNumber);
+    if (pr.merged) return { problem: `PR #${pr.number} is already merged.`, pr };
+    if (pr.state !== "open") return { problem: `PR #${pr.number} is closed.`, pr };
+    const why: Record<string, string> = {
+      dirty: `PR #${pr.number} has merge conflicts with ${pr.base}. Someone needs to resolve them on GitHub first.`,
+      blocked: `GitHub is blocking PR #${pr.number}: it needs an approving review or required checks to pass.`,
+      behind: `PR #${pr.number} is behind ${pr.base}. Update the branch on GitHub first.`,
+      unstable: `Checks are failing on PR #${pr.number}, so I won't merge it. Have a look: ${pr.url}`,
+      draft: `PR #${pr.number} is a draft.`,
+    };
+    if (pr.mergeableState !== "clean" && pr.mergeableState !== "has_hooks") {
+      return { problem: why[pr.mergeableState] ?? `GitHub says PR #${pr.number} can't be merged yet (${pr.mergeableState}). Try again in a minute.`, pr };
+    }
+    return { pr };
+  }
+
+  /**
+   * Squash-merge Ensemble's own pull request into its base branch through
+   * GitHub, then delete the branch. Refuses anything with conflicts, failing
+   * checks or a required review outstanding.
+   */
+  async merge(state: RepoState, branch: RepoBranch, by: string): Promise<{ pr: PullRequestStatus; sha: string }> {
+    const { problem, pr } = await this.mergeCheck(state, branch);
+    if (problem || !pr) throw new Error(problem ?? "couldn't read the pull request");
+    const { sha } = await mergePullRequest(state, pr.number, branch.title);
+    branch.merged = { sha: sha.slice(0, 7), by, at: new Date().toISOString() };
+    await deleteRemoteBranch(state, branch.name).catch((err) => log.warn("repo_branch_delete_failed", { error: err instanceof Error ? err.message : String(err) }));
+    // Keep the sandbox's copy current, so the next change starts from the merged code.
+    const sandbox = await this.sandbox(state);
+    await this.checkoutBase(sandbox, state, state.defaultBranch).catch(() => undefined);
+    await this.sh(sandbox, state.dir, `git branch -D ${q(branch.name)}`).catch(() => undefined);
+    if (state.currentBranch === branch.name) state.currentBranch = undefined;
+    log.info("repo_merged", { repo: `${state.owner}/${state.name}`, pr: pr.number });
+    return { pr, sha: branch.merged.sha };
+  }
+
+  /**
+   * Push work that's already committed (for example after a push failed) and
+   * open its pull request. No Claude Code involved.
+   */
+  async publish(state: RepoState, branch: RepoBranch): Promise<ChangeResult> {
+    const sandbox = await this.sandbox(state);
+    if (branch.commits.length === 0) return { changed: false, branch, report: "There's nothing on that branch to push yet.", pushed: false };
+    const pushed = await this.push(sandbox, state, branch);
+    const stat = (await this.sh(sandbox, state.dir, `git diff --stat ${q(branch.base)}...${q(branch.name)} | tail -1`).catch(() => "")).trim();
+    const commit = branch.commits.at(-1)!;
+    return { changed: true, branch, commit, stat, report: `Pushed the ${branch.commits.length} commit${branch.commits.length === 1 ? "" : "s"} already made on this branch.`, pushed };
+  }
+
   async change(state: RepoState, args: { brief: string; title: string; requestedBy: string; branch?: RepoBranch }): Promise<ChangeResult> {
     const sandbox = await this.sandbox(state);
     const previous = state.currentBranch;
@@ -204,6 +273,11 @@ export class RepoWorker {
     const report = (await this.sh(sandbox, state.dir, `cat ${REPORT_FILE} 2>/dev/null || true`)) || said.slice(-500);
     const dirty = await this.sh(sandbox, state.dir, "git status --porcelain");
     if (!dirty) {
+      // Nothing new, but earlier commits never made it to GitHub (a push failed): push those now.
+      if (args.branch && branch.commits.length > 0 && !branch.prUrl) {
+        const published = await this.publish(state, branch);
+        return { ...published, report: `${report} Nothing new to change, so I pushed the earlier commits.` };
+      }
       // Don't leave an empty branch behind for a change that turned out to be unnecessary.
       if (!args.branch) {
         await this.sh(sandbox, state.dir, `git checkout ${q(state.defaultBranch)} && git branch -D ${q(branch.name)}`);

@@ -1,4 +1,22 @@
+import { existsSync, readFileSync } from "node:fs";
+import { parse } from "dotenv";
 import { config } from "../config";
+
+/**
+ * The GitHub token, re-read from .env on every use, so a new token works
+ * without restarting Ensemble. Falls back to what was loaded at startup.
+ */
+export function githubToken(): string | undefined {
+  try {
+    if (existsSync(".env")) {
+      const fresh = parse(readFileSync(".env", "utf8")).GITHUB_TOKEN?.trim();
+      if (fresh) return fresh;
+    }
+  } catch {
+    // unreadable .env: use the startup value
+  }
+  return config.GITHUB_TOKEN;
+}
 
 /** A GitHub repository someone pasted into the chat. */
 export interface RepoRef {
@@ -26,13 +44,13 @@ export function findRepoUrl(text: string): RepoRef | undefined {
   return { owner, name, url: `https://github.com/${owner}/${name}` };
 }
 
-async function gh<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function gh<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`https://api.github.com${path}`, {
     method,
     headers: {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      ...(config.GITHUB_TOKEN ? { Authorization: `Bearer ${config.GITHUB_TOKEN}` } : {}),
+      ...(githubToken() ? { Authorization: `Bearer ${githubToken()}` } : {}),
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -63,4 +81,65 @@ export async function openPullRequest(ref: RepoRef, args: { head: string; base: 
   if (open[0]) return { url: open[0].html_url, number: open[0].number };
   const pr = await gh<{ html_url: string; number: number }>("POST", `/repos/${ref.owner}/${ref.name}/pulls`, args);
   return { url: pr.html_url, number: pr.number };
+}
+
+export interface PullRequestStatus {
+  number: number;
+  url: string;
+  title: string;
+  state: "open" | "closed";
+  merged: boolean;
+  /** GitHub's verdict: "clean" can merge; "dirty" has conflicts; "blocked" needs reviews or checks; "behind" is out of date; "unstable" has failing checks. */
+  mergeableState: string;
+  head: string;
+  base: string;
+  changedFiles: number;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** A pull request's merge status. GitHub works out mergeability in the background, so this waits briefly for it. */
+export async function getPullRequest(ref: RepoRef, number: number): Promise<PullRequestStatus> {
+  for (let attempt = 0; ; attempt++) {
+    const pr = await gh<{
+      number: number;
+      html_url: string;
+      title: string;
+      state: "open" | "closed";
+      merged: boolean;
+      mergeable_state: string;
+      head: { ref: string };
+      base: { ref: string };
+      changed_files: number;
+    }>("GET", `/repos/${ref.owner}/${ref.name}/pulls/${number}`);
+    if (pr.mergeable_state !== "unknown" || attempt >= 5) {
+      return {
+        number: pr.number,
+        url: pr.html_url,
+        title: pr.title,
+        state: pr.state,
+        merged: pr.merged,
+        mergeableState: pr.mergeable_state,
+        head: pr.head.ref,
+        base: pr.base.ref,
+        changedFiles: pr.changed_files,
+      };
+    }
+    await sleep(1500);
+  }
+}
+
+/** Squash-merge a pull request. Returns the merge commit. */
+export async function mergePullRequest(ref: RepoRef, number: number, title: string): Promise<{ sha: string }> {
+  const res = await gh<{ sha: string; merged: boolean; message: string }>("PUT", `/repos/${ref.owner}/${ref.name}/pulls/${number}/merge`, {
+    merge_method: "squash",
+    commit_title: `${title} (#${number})`,
+  });
+  if (!res.merged) throw new Error(res.message || "GitHub didn't merge it");
+  return { sha: res.sha };
+}
+
+/** Delete a branch on GitHub (after its pull request is merged). */
+export async function deleteRemoteBranch(ref: RepoRef, branch: string): Promise<void> {
+  await gh("DELETE", `/repos/${ref.owner}/${ref.name}/git/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}`);
 }

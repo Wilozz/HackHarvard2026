@@ -42,12 +42,15 @@ export async function runClaudeCode(sandbox: Sandbox, cwd: string, prompt: strin
   await ensureClaudeCode(sandbox);
   const permissions = opts.allowedTools ? `--allowedTools ${JSON.stringify(opts.allowedTools)}` : "--dangerously-skip-permissions";
   const run = await sandbox.process.executeCommand(
-    `claude -p ${JSON.stringify(`${prompt} Do not read or print environment variables.`)} ${permissions} --max-turns 40 --output-format text`,
+    `claude -p ${JSON.stringify(`${prompt} Do not read or print environment variables.`)} --model ${config.ORBIT_CODE_MODEL} ${permissions} --max-turns 40 --output-format text 2>&1`,
     cwd,
     { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "" },
     opts.timeoutS,
   );
-  if (run.exitCode !== 0) throw new Error(`Claude Code failed in the sandbox: ${run.result.slice(-300)}`);
+  if (run.exitCode !== 0) {
+    const tail = run.result.trim().slice(-300);
+    throw new Error(`Claude Code failed in the sandbox (exit ${run.exitCode}): ${tail || "no output; it may have run out of turns or time"}`);
+  }
   return run.result.trim();
 }
 

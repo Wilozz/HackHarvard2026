@@ -62,13 +62,18 @@ const env = z
     DAYTONA_API_KEY: optional,
     DAYTONA_API_URL: optional,
     // How Claude writes the app: "api" (Claude writes the file from this machine) or "claude-code" (Claude Code runs inside the sandbox).
-    // auto → claude-code when Daytona is set up, else api.
-    ORBIT_BUILDER: z.enum(["auto", "api", "claude-code"]).default("auto"),
+    // How apps get written. "api" (default): one streamed Claude call, about 50 s. "claude-code": Claude Code
+    // works step by step inside the Daytona sandbox, which is several times slower for a single-file app.
+    // Repo mode always uses Claude Code in Daytona.
+    ORBIT_BUILDER: z.enum(["auto", "api", "claude-code"]).default("api"),
     ORBIT_BUILD_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
     // The design step that turns the whole chat into a detailed spec before a new app is built.
     ORBIT_SPEC: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
     ORBIT_SPEC_EFFORT: z.enum(["low", "medium", "high"]).default("medium"),
-    ORBIT_SPEC_MODEL: z.string().default("claude-sonnet-5-5"),
+    // Models: the "interpreter" (brief, repo planner, design spec) and the builder (Claude Code in Daytona, the API builder, error fixes).
+    ORBIT_BRIEF_MODEL: z.string().default("claude-haiku-5-5"),
+    ORBIT_SPEC_MODEL: z.string().default("claude-haiku-5-5"),
+    ORBIT_CODE_MODEL: z.string().default("claude-sonnet-5-5"),
     // Comma-separated phone numbers allowed to start builds. Empty → everyone in members.json and the signup groups.
     ORBIT_ALLOWED: optional,
     // Edits (v2, v3…) build right away; set true to make them wait for "ship it" too.
@@ -134,7 +139,7 @@ export const config = {
   photonReplySpaces: replySpaces as ReadonlyMap<string, string>,
   orbitHost: (env.ORBIT_HOST === "auto" ? (env.DAYTONA_API_KEY ? "daytona" : "local") : env.ORBIT_HOST) as "daytona" | "local",
   orbitLocalBase: (env.ORBIT_PUBLIC_URL ?? `http://127.0.0.1:${env.SIGNUP_PORT}`).replace(/\/+$/, ""),
-  orbitBuilder: (env.ORBIT_BUILDER === "auto" ? (env.DAYTONA_API_KEY ? "claude-code" : "api") : env.ORBIT_BUILDER) as "api" | "claude-code",
+  orbitBuilder: (env.ORBIT_BUILDER === "auto" ? "api" : env.ORBIT_BUILDER) as "api" | "claude-code",
   orbitAllowed: (env.ORBIT_ALLOWED ?? "").split(",").map((n) => n.trim()).filter(Boolean),
   // Embedding model and its output dimension. Changing the model means
   // changing EMBED_DIM and recreating the chunks table (npm run reset -- --all).
