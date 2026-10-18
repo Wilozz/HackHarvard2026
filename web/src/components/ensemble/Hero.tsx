@@ -48,6 +48,8 @@ export function Hero({ onStart }: { onStart: () => void }) {
   const [open, setOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+  // Alternate headline, flipped by the barely-visible dot in the bottom-right corner.
+  const [buildTogether, setBuildTogether] = useState(false);
 
   const configRef = useRef(config);
   configRef.current = config;
@@ -191,10 +193,21 @@ export function Hero({ onStart }: { onStart: () => void }) {
         initial={{ opacity: 0, y: 18, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        className="px-5 pt-4 pb-10 text-center text-[clamp(48px,8vw,104px)] leading-[0.95] font-semibold tracking-[-0.055em] sm:pt-8 sm:pb-14"
+        className="px-5 pt-4 pb-10 text-center sm:pt-8 sm:pb-14"
       >
-        Collaborative <em className="font-serif font-normal tracking-[-0.02em] text-primary italic">prompting.</em>
+        <span className="block text-[clamp(48px,8vw,104px)] leading-[0.95] font-semibold tracking-[-0.055em]">
+          {buildTogether ? "Build" : "Collaborative"}{" "}
+          <em className="font-serif font-normal tracking-[-0.02em] text-primary italic">{buildTogether ? "together." : "prompting."}</em>
+        </span>
+        {buildTogether && <span className="mt-4 block text-sm font-medium tracking-[0.3em] text-muted-foreground uppercase sm:text-base">Collaborative prompting</span>}
       </motion.h1>
+
+      <button
+        type="button"
+        onClick={() => setBuildTogether((b) => !b)}
+        aria-label={buildTogether ? "Show the Collaborative prompting headline" : "Show the Build together headline"}
+        className="fixed right-3 bottom-3 z-50 size-3 rounded-full bg-foreground/15 hover:bg-foreground/30"
+      />
 
       <motion.div
         initial={{ opacity: 0, y: 40 }}
