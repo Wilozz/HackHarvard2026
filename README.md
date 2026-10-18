@@ -1,8 +1,8 @@
-# ensemble.
+# Ensemble.
 
 ### The group chat that builds.
 
-Ensemble is an AI coding teammate that lives in your iMessage group chat. Brainstorm with your friends, ask Ensemble to build something, and get a working app back as a link.
+Ensemble is an AI coding teammate that lives in your iMessage group chat. Brainstorm with your friends, ask Ensemble to build something or continuing building something, with live previews and iteration available right in your hands. 
 
 **Built at HackHarvard 2026 with Photon 2.0, Daytona, and Anthropic Claude.**
 
@@ -10,32 +10,32 @@ Ensemble is an AI coding teammate that lives in your iMessage group chat. Brains
 
 The best ideas start in group chats. Most of them stay there.
 
-One person suggests a game. Someone adds a twist. Another sends a photo that would make the perfect character. Turning that conversation into something real usually falls on whoever opens their editor first.
+Whether your continuing building a startup, or working on a hackathon project across the world with your teammates, Ensemble lets you work together using the thing we all have without any setup: Our phones and text messages.
 
-Ensemble gives the whole group a coding teammate. Everyone can contribute ideas, request changes, and try the result together—all from iMessage.
+Ensemble gives the whole group a coding teammate. Everyone can contribute ideas, request changes, and try the result together—all from iMessage without ever leaving the conversation.
 
 ## How it works
 
 1. **Create your group.** Use the signup page to start an iMessage group with your teammates and Ensemble.
-2. **Share an idea.** Mention Ensemble and describe what you want to make.
+2. **Share an idea.** Talk normally about it while Ensemble pulls context and simply call on it when you want to start building.
 3. **Approve the plan.** Ensemble writes a brief. Reply **“ship it”** to start building.
 4. **Open the result.** Ensemble builds the app in a Daytona sandbox and posts a live link.
-5. **Keep improving it.** Ask for changes and get a new version, while earlier versions keep their own links.
+5. **Keep improving it.** Ask for changes and get a new version, while earlier versions keep their own links over time.
 
-> **You:** @Ensemble make a space invaders game where the aliens are our teammates  
+> **You:** @Ensemble continue on from our previous PR on our project.  
 > **Ensemble:** Here's the plan… Reply “ship it” to build it.  
 > **Teammate:** ship it  
-> **Ensemble:** v1 is live!  
-> **You:** @Ensemble make the aliens faster and add sound  
+> **Ensemble:** v1 of the change is live!  
+> **You:** @Ensemble fine tune the model to only take in the following requirements... 
 > **Ensemble:** On it: v2…
 
 ## What you can do
 
-- **Build together:** Create games, quizzes, timers, visualizers, and small web apps from a shared conversation.
+- **Build together:** Create anything and continue anything at any time.
 - **Make it personal:** Bring photos, names, and inside jokes into what you build.
-- **Iterate through messages:** Describe changes naturally and receive an updated app.
+- **Iterate through messages:** Describe changes naturally and receive an updated app all depending on your convos.
 - **Keep your versions:** Revisit earlier builds through their original links.
-- **Work on existing code:** Connect a GitHub repository, ask questions, and request changes through branches and pull requests.
+- **Work on existing code:** Connect a GitHub repository, ask questions, and request changes through branches and pull requests and deployments.
 
 ## Photon 2.0: bringing the agent into iMessage
 
@@ -143,4 +143,4 @@ The goal stays the same: make building together as natural as talking about an i
 
 **Ideas belong to the whole group. Building them should, too.**
 
-**ensemble. — The group chat that builds.**
+**Ensemble. — Build Together.**
