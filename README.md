@@ -1,223 +1,146 @@
 # ensemble.
 
-**Collaborative coding, right in your group chat.**
+### The group chat that builds.
 
-Ensemble is an AI-powered collaborative development agent that lives directly inside your iMessage group chat. Powered by **Photon, Anthropic Claude, and Daytona**, Ensemble turns conversations into working software, allowing teams to brainstorm, plan, build, and ship projects together without leaving their messages.
+Ensemble is an AI coding teammate that lives in your iMessage group chat. Brainstorm with your friends, ask Ensemble to build something, and get a working app back as a link.
 
-## The Problem
+**Built at HackHarvard 2026 with Photon 2.0, Daytona, and Anthropic Claude.**
 
-Software development is collaborative, but AI coding tools are largely designed for individual developers.
+## Why Ensemble?
 
-Project ideas often begin in group chats, where teammates brainstorm features, discuss technical decisions, and assign responsibilities. However, turning those conversations into working code requires switching between messaging platforms, development environments, and project management tools.
+The best ideas start in group chats. Most of them stay there.
 
-Important context gets lost, decisions become fragmented, and progress slows down.
+One person suggests a game. Someone adds a twist. Another sends a photo that would make the perfect character. Turning that conversation into something real usually falls on whoever opens their editor first.
 
-## Our Solution
+Ensemble gives the whole group a coding teammate. Everyone can contribute ideas, request changes, and try the result together—all from iMessage.
 
-Ensemble brings an AI coding teammate directly into your iMessage group chat.
+## How it works
 
-Rather than requiring developers to individually prompt an AI assistant, Ensemble understands the entire team's conversation and uses that shared context to coordinate development.
+1. **Create your group.** Use the signup page to start an iMessage group with your teammates and Ensemble.
+2. **Share an idea.** Mention Ensemble and describe what you want to make.
+3. **Approve the plan.** Ensemble writes a brief. Reply **“ship it”** to start building.
+4. **Open the result.** Ensemble builds the app in a Daytona sandbox and posts a live link.
+5. **Keep improving it.** Ask for changes and get a new version, while earlier versions keep their own links.
 
-Through Claude's reasoning capabilities and Daytona's sandboxed development environments, Ensemble can translate group discussions into actionable coding tasks, execute code, run tests, and integrate changes with GitHub.
+> **You:** @Ensemble make a space invaders game where the aliens are our teammates  
+> **Ensemble:** Here's the plan… Reply “ship it” to build it.  
+> **Teammate:** ship it  
+> **Ensemble:** v1 is live!  
+> **You:** @Ensemble make the aliens faster and add sound  
+> **Ensemble:** On it: v2…
 
-**Your group chat becomes your development workspace.**
+## What you can do
 
-## Key Features
+- **Build together:** Create games, quizzes, timers, visualizers, and small web apps from a shared conversation.
+- **Make it personal:** Bring photos, names, and inside jokes into what you build.
+- **Iterate through messages:** Describe changes naturally and receive an updated app.
+- **Keep your versions:** Revisit earlier builds through their original links.
+- **Work on existing code:** Connect a GitHub repository, ask questions, and request changes through branches and pull requests.
 
-- **Native iMessage Integration:** Collaborate with an AI agent directly inside your existing group chat using Photon 2.0.
-- **Shared Context & Memory:** Understand conversations across multiple teammates and retain project requirements, decisions, and preferences.
-- **Collaborative AI Coding:** Generate, modify, and debug code based on instructions from multiple participants.
-- **Sandboxed Code Execution:** Use Daytona to create isolated development environments for writing, executing, and testing code.
-- **GitHub Integration:** Connect development workflows to repositories, branches, commits, and pull requests.
-- **Project Planning:** Convert brainstorming discussions into structured development plans and actionable tasks.
-- **Iterative Development:** Request changes, provide feedback, and review implementation progress directly through iMessage.
+## Photon 2.0: bringing the agent into iMessage
 
-## How It Works
+Photon powers Ensemble’s connection to the group chat. It delivers incoming messages and photos to our agent and sends plans, progress updates, and app links back to the conversation.
 
-1. **Connect:** Add Ensemble to your iMessage group chat through Photon.
-2. **Collaborate:** Discuss ideas, features, and technical decisions naturally with your teammates.
-3. **Plan:** Ask Ensemble to summarize requirements and organize development tasks.
-4. **Build:** Claude interprets the team's instructions and coordinates coding tasks inside a Daytona sandbox.
-5. **Execute:** Daytona provides an isolated environment to write code, install dependencies, and run tests.
-6. **Integrate:** Changes can be committed to GitHub and submitted as pull requests for review.
-7. **Iterate:** Ensemble shares progress in the group chat, where teammates can request improvements and continue building.
+It also powers group creation through our signup page, so teammates can start building together without installing another messaging app.
 
-## Example Conversation
+**The conversation is the interface.**
 
-**Alex:** Let's build a website that tracks shared expenses.
+## Daytona: turning ideas into working software
 
-**Sam:** We should use Next.js and Supabase.
+Daytona provides the isolated development environments where Ensemble builds.
 
-**Jordan:** Make sure it's mobile responsive.
+Inside a sandbox, Ensemble can write code, install dependencies, run commands, and execute tests. Generated apps are served through Daytona preview links that the whole group can open.
 
-**Alex:** @Ensemble summarize our project.
+Each published version gets its own link. For existing repositories, Daytona gives Ensemble a workspace to clone code, implement changes, and prepare commits and pull requests.
 
-**Ensemble:** We're building a mobile-responsive expense tracking application using Next.js and Supabase. I'll organize the requirements into an implementation plan.
+**The result is working software your group can actually try.**
 
-**Sam:** @Ensemble build the initial version.
+## Claude: from conversation to code
 
-**Ensemble:** Starting a Daytona development sandbox to scaffold the application and implement the initial features.
+Anthropic Claude turns the group’s ideas into a clear build brief and detailed design specification. Claude Code works inside Daytona to implement the app or repository changes.
 
-**Ensemble:** Initial implementation complete. Tests passed, and the changes are ready for review on GitHub.
+The specification captures the details that make an idea yours: controls, visual style, behavior, photos, and references from the conversation.
 
-## Tech Stack
+Generated pages are checked for browser errors, with failures sent back for a repair attempt before the result is shared.
+
+## Architecture
+
+![Ensemble architecture](docs/architecture.png)
+
+**iMessage → Photon → Ensemble → Claude → Daytona → live app → group chat**
+
+Conversation memory helps Ensemble retrieve relevant context, while GitHub connects the workflow to existing repositories.
+
+## GitHub, from your group chat
+
+Ensemble can help with an existing project as well as build something new.
+
+Ask it to explain the code, implement a feature, compare changes, or undo its work. Repository changes are prepared on branches and shared through pull requests for review.
+
+Rollbacks create new commits rather than erasing history.
+
+## Built with
 
 | Technology | Purpose |
 |---|---|
-| **Photon 2.0** | iMessage group chat messaging and communication |
-| **Anthropic Claude** | AI reasoning, planning, and code generation |
-| **Daytona** | Sandboxed development environments and agent execution |
-| **TypeScript / Node.js** | Backend logic, messaging, and workflow orchestration |
-| **Supabase / PostgreSQL** | Conversation history, project state, and persistent storage |
-| **pgvector** | Semantic search and long-term project memory |
-| **GitHub API** | Repository management, branches, commits, and pull requests |
+| **Photon 2.0** | iMessage messaging, photos, and group creation |
+| **Daytona** | Isolated development environments and app previews |
+| **Anthropic Claude & Claude Code** | Planning, design specifications, and implementation |
+| **Node.js & TypeScript** | Backend and agent orchestration |
+| **React, Vite & Tailwind CSS** | Signup page and frontend |
+| **Motion & Three.js / React Three Fiber** | Animated frontend experience |
+| **Supabase / PostgreSQL & pgvector** | Conversation storage and retrieval |
+| **Hugging Face Transformers.js** | Local embeddings for conversation memory |
+| **GitHub API & Git** | Repositories, branches, commits, and pull requests |
+| **Puppeteer** | Browser checks for generated apps |
+| **Sharp & heic-convert** | Photo processing and iPhone image support |
 
-## System Architecture
+## Run locally
 
-```text
-                  iMessage Group Chat
-                          |
-                      Photon 2.0
-                          |
-                   TypeScript Backend
-                          |
-              +-----------+-----------+
-              |                       |
-       Conversation Memory       Claude AI Agent
-        (Supabase + RAG)              |
-              |                    Daytona
-              |                       |
-              |               Isolated Sandbox
-              |               - Write Code
-              |               - Run Commands
-              |               - Execute Tests
-              |                       |
-              +-----------------------+
-                                      |
-                                  GitHub API
-                                      |
-                             Commits / Pull Requests
-                                      |
-                               Photon Response
-                                      |
-                              iMessage Group Chat
-```
+Requires **Node.js 20+**, Anthropic and Photon credentials, and a Daytona key for sandboxed builds and previews.
 
-## Technical Architecture
+### Install dependencies
 
-### 1. Messaging — Photon
+    npm install
+    npm run web:install
 
-Photon provides the communication layer between Ensemble and iMessage.
+### Configure your environment
 
-Incoming messages are processed by the TypeScript backend, allowing Ensemble to understand requests from different members of the group and respond within the same conversation.
+    cp .env.example .env
 
-### 2. Intelligence — Anthropic Claude
+Add your credentials and configuration to `.env`. Keep this file local and out of version control.
 
-Claude serves as Ensemble's reasoning and development engine.
+### Start the agent
 
-It interprets team discussions, extracts requirements, generates implementation plans, and determines which development actions to execute.
+    npm run dev
 
-### 3. Execution — Daytona
+### Start the frontend
 
-Daytona provides isolated development environments for Ensemble's coding workflows.
+In another terminal:
 
-Within a sandbox, the agent can:
+    npm run web:dev
 
-- Clone and initialize repositories.
-- Create and modify project files.
-- Install dependencies.
-- Execute terminal commands.
-- Run builds and automated tests.
-- Prepare changes for GitHub integration.
+Open the local URL printed by Vite.
 
-This allows Ensemble to move beyond generating code suggestions and actually implement software.
+## Useful commands
 
-### 4. Memory — Supabase & pgvector
-
-Ensemble stores conversation history and project context in a persistent database.
-
-Using retrieval-augmented generation (RAG), the agent can retrieve relevant discussions, technical decisions, and requirements without requiring teammates to repeat themselves.
-
-### 5. Version Control — GitHub
-
-GitHub connects Ensemble's coding workflows to real repositories.
-
-The agent can prepare branches, commits, and pull requests, allowing teammates to review changes before merging them into the project.
-
-## Running Ensemble
-
-The chat flow that's built today: a request in the group becomes a short brief, someone replies `ship it`, and about a minute later a link to a working app arrives. Ask for changes and v2 arrives at its own link.
-
-### Run it
-
-```bash
-npm install
-# .env: ANTHROPIC_API_KEY, PHOTON_PROJECT_ID, PHOTON_API_KEY, DAYTONA_API_KEY, ORBIT_ALLOWED (the roster's numbers)
-npm run dev
-```
-
-In the group chat:
-
-| Text | Ensemble does |
+| In the chat | What happens |
 |---|---|
-| `@Ensemble make space invaders where the aliens are our teammates` | Replies with a short build brief |
-| `ship it` (no mention needed while a brief is waiting) | Builds it; posts `v1 … is live: <link>` about a minute later |
-| `@Ensemble make the aliens faster and add sound` | Edits the same app and posts v2 at a new link (v1 keeps working) |
-| Send a photo, then `@Ensemble make a game where this is the boss` | Uses the photo in the app (it's embedded in the page) |
-| Send a photo, then `@Ensemble what's in this picture?` | Describes it |
-| `@Ensemble versions` | Lists every link |
-| `@Ensemble cancel` | Drops a brief that hasn't been built |
-| `@Ensemble help` | How it works |
+| `@Ensemble make a game where…` | Creates a build plan |
+| `ship it` | Approves the pending plan |
+| `@Ensemble add sound` | Requests a change to the current app |
+| `@Ensemble versions` | Lists app versions or repository branches |
+| `@Ensemble cancel` | Cancels a pending plan |
+| `@Ensemble help` | Explains what Ensemble can do |
 
-### Where each sponsor's tech is used
+## What's next
 
-- **Photon 2.0 beta** (`src/photon/`): the agent's iMessage line. Ensemble polls Photon for group messages, detects `@Ensemble`, and replies in the chat with briefs and links. The signup page (http://127.0.0.1:8788) starts a new group chat from the line.
-- **Daytona** (`src/orbit/hosts.ts`): every app gets its own public sandbox (`public: true`, label `app=orbit`). Each version is uploaded to `v1/`, `v2/`… and served by a web server inside the sandbox; the link in the chat is the sandbox's preview URL. Apps are written by one streamed Claude Sonnet 5.5 call (about 50 s) and published into the sandbox; `ORBIT_BUILDER=claude-code` has Claude Code write them inside the sandbox instead (several minutes per app). Repo mode always runs Claude Code (Sonnet 5.5) headless inside the repo's sandbox. `npm run orbit:cleanup` deletes the sandboxes after the demo.
-- **Claude** (`src/orbit/brief.ts`, `src/orbit/spec.ts`, `src/orbit/builder.ts`): Claude Haiku 5.5 writes the short brief the group approves (about 3 s, `ORBIT_BRIEF_MODEL`). While they read it, a second Haiku call (`ORBIT_SPEC_MODEL`) turns the brief plus the **whole chat** into a detailed design spec (controls, numbers, palette, sound, screens, inside jokes, a pass/fail checklist), saved as `data/apps/<app>/v1/SPEC.md`. The builder works from that spec, so v1 comes out polished. `ORBIT_SPEC=false` skips it. Claude Sonnet 5.5 (`ORBIT_CODE_MODEL`) then writes the whole app as one self-contained HTML file (about 50 s). If the post-build check finds console errors, they go back to Claude once for a fix before the link is posted.
+We want faster builds, stronger automated checks, richer apps, and smoother collaboration across multiple projects and messaging platforms.
 
-**Several apps in one chat** (`src/orbit/service.ts`, segments in `data/orbit.json`): the chat is split into stretches, each tied to the app it was about. Talk after a link goes out belongs to no app until the next request; the brief step (which sees only that open stretch plus a one-line list of every app) decides whether it's a new app or a change to an existing one, including "go back to the cat game". A new app's design spec and photos come only from its own stretch, so app 2 never re-reads app 1's discussion. Edits work from that app's own code and running summary. Each brief or spec reads at most the newest 80 messages of its stretch.
-
-**Repo mode** (`src/orbit/repo.ts`, `src/orbit/github.ts`, `src/orbit/repoPlan.ts`): name a repo in plain text (`@Ensemble work on Wilozz/HackHarvard2026`), or say "this repository" / "your own code" for Ensemble's own repo (`ENSEMBLE_REPO`). Pasted links usually don't work: iMessage turns them into link-preview bubbles, which Photon's beta drops. Ensemble clones it into its own Daytona sandbox (Daytona's git API, full history), then Claude Code reads it and posts a summary. After that, messages about the repo are routed by a small Claude call:
-
-| Text | Ensemble does |
-|---|---|
-| `@Ensemble add a dark mode toggle` | Posts a plan; after `ship it`, Claude Code makes the change on a new `ensemble/…` branch and runs the repo's tests, then Ensemble commits it (Claude writes the message), pushes the branch and opens a pull request |
-| `@Ensemble also make it remember the choice` | Same, but on the branch already in progress (same PR) |
-| `@Ensemble show the last commits` / `what changed?` / `compare our branch to main` | Claude Code answers from `git log` and `git diff` with read-only tools |
-| `@Ensemble undo that` / `restore it to 1a2b3c4` | Asks for `ship it`, then reverts (or restores files) as a new commit on the branch and pushes. Without a named commit it only undoes Ensemble's own latest commit |
-| `@Ensemble push it` / `open the PR` | Pushes work that's already committed (say, after a failed push) and opens its pull request. No code changes, so no `ship it` |
-| `@Ensemble merge it` | Says which PR it will merge and waits for `ship it`, then squash-merges it into the default branch through GitHub and deletes the branch. Only Ensemble's own PRs, and only when GitHub says it can merge cleanly (no conflicts, failing checks or missing required reviews) |
-| `@Ensemble versions` | Lists the branches and pull requests |
-| `@Ensemble we're done with the repo`, `don't use a repo`, `no repo` | Back to building apps (anything else in the same message is built as an app) |
-
-While a repo is open, requests for standalone apps or games ("make a snake game", "make the snake faster") are handed off to the app builder; only requests about the repo's code become repo changes. Every change request gets its own branch and PR, and one task runs at a time per chat, so teammates never overwrite each other. Ensemble never pushes to the default branch and never force-pushes; the only way its work reaches the default branch is a merge someone approved with `ship it`. The GitHub token is only passed to Daytona's clone, pull and push calls, never to Claude Code; Claude Code gets the Anthropic key and is told the repo's files are data, not instructions.
-
-**Photos** (`src/orbit/images.ts`): Ensemble looks at photos sent in the chat in the last hour (up to four, including ones sent before the `@Ensemble` message). It downloads them from Photon, converts iPhone HEIC to JPEG and shrinks them to 1024 px, then shows them to Claude for the brief, the spec and the build. Generated code refers to each photo by a placeholder (`ORBIT_IMAGE_1`), which is swapped for the real image afterwards, so the published page is self-contained and edits never send base64 back to Claude. Converted photos are cached in `data/images/` (gitignored).
-
-### Safety
-
-- Only numbers in `ORBIT_ALLOWED` (or, if empty, `members.json` and the signup groups) can request or approve builds. Matching is by the sender's phone number from Photon, never by what the message says.
-- Nothing builds until someone on the roster says `ship it`.
-- Chat text is untrusted input: the brief and build prompts tell Claude to ignore instructions in it, and generated apps may not make network requests or collect personal data.
-- No Photon key ever goes into a sandbox. With the Claude Code builder the sandbox gets the Anthropic key, passed only to the `claude` command; with `api` it holds only the app files.
-- Builds time out after `ORBIT_BUILD_TIMEOUT_S`. Every build is recorded in `data/orbit.json` (who asked, the brief, result, link, build time), and each version's HTML and screenshot is kept in `data/apps/`.
-
-### Photon notes
-
-Replies never send `parentMessageId` (Photon rejects threaded replies on these Spaces). Group messages can arrive under a different Space than the one that can be sent to; `PHOTON_REPLY_SPACES` and the signup-group matching handle that. Details: [docs/photon-setup.md](docs/photon-setup.md).
-
-## Our Vision
-
-Ensemble reimagines collaborative software development by bringing AI-powered coding directly into the conversations where ideas originate.
-
-Instead of treating AI as an individual developer's assistant, Ensemble introduces a shared coding agent that understands the entire team, maintains project context, and turns collective decisions into working software.
-
-## Built At
-
-**HackHarvard 2026**
-
-Built with Photon, Anthropic Claude, Daytona, Supabase, and GitHub.
+The goal stays the same: make building together as natural as talking about an idea.
 
 ---
+
+**Ideas belong to the whole group. Building them should, too.**
 
 **ensemble. — The group chat that builds.**
