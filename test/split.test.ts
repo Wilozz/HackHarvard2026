@@ -300,4 +300,5 @@ test("the dashboard shows balances, the split's progress and the log", async () 
   assert.equal(byName.Harsh!.share, 160);
   assert.equal(byName.Harsh!.sent, false);
   assert.match(after.activity[0]!.detail, /Hetarth sent \$160 to Wilson \(\$500 → \$340\)/);
+  await (await getDb()).close();
 });
