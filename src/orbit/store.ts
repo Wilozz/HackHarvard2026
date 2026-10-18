@@ -53,7 +53,7 @@ export interface PendingBuild {
 }
 
 export interface PendingRepoTask {
-  action: "change" | "update" | "rollback";
+  action: "change" | "update" | "push" | "merge" | "rollback";
   title: string;
   brief: string;
   requestedBy: string;

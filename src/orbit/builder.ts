@@ -54,5 +54,5 @@ export async function generateApp(args: GenerateArgs): Promise<string> {
   if (args.errors && args.errors.length > 0) {
     parts.push("The last version of this file had these errors when loaded in a browser. Fix them:", "<errors>", ...args.errors.slice(0, 15), "</errors>");
   }
-  return extractHtml(await streamText({ system: SYSTEM, user: parts.join("\n"), effort: config.ORBIT_BUILD_EFFORT, images: args.images }));
+  return extractHtml(await streamText({ system: SYSTEM, user: parts.join("\n"), effort: config.ORBIT_BUILD_EFFORT, images: args.images, model: config.ORBIT_CODE_MODEL }));
 }

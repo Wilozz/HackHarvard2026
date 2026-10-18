@@ -118,6 +118,8 @@ function setup(opts: { qualityErrors?: string[][]; failBuild?: boolean; repos?: 
         briefImages.push((images ?? []).map((i) => i.label));
         briefTranscripts.push(transcript);
         if (/joke/i.test(request)) return { action: "reply", title: "", projectId: "", repo: "", brief: "", reply: "I build small web apps." };
+        const repoName = request.match(/work on ([\w.-]+\/[\w.-]+)/i);
+        if (repoName) return { action: "repo", repo: repoName[1]!, title: "", projectId: "", brief: "", reply: "" };
         if (/this repository|your own code/i.test(request)) {
           return { action: "repo", repo: "self", title: "Structured replies", projectId: "", brief: "Format chat replies with short bullet points.", reply: "" };
         }
@@ -446,4 +448,180 @@ test("asking to change Ensemble's own code clones its repo and carries the chang
   await step();
   assert.equal(calls.at(-1), "change Format chat replies with short bullet points.");
   assert.match(texts().at(-1)!, /Pull request: https:\/\/github\.com\/Wilozz\/HackHarvard2026\/pull\/9/);
+});
+
+test("work whose push failed can be pushed later without redoing it", async () => {
+  const { branchName } = await import("../src/orbit/repo");
+  assert.match(branchName("Structured chat replies!"), /^ensemble-structured-chat-replies-[a-z0-9]{4}$/);
+
+  const calls: string[] = [];
+  const branch = { name: "ensemble-structured-replies-x1", title: "Structured replies", base: "main", createdBy: "Wilson", commits: [] as { sha: string; message: string; by: string; at: string }[], prUrl: undefined as string | undefined };
+  const repos = {
+    async attach(ref: { owner: string; name: string; url: string }) {
+      return { ...ref, defaultBranch: "main", canPush: false, sandboxId: "sbx", dir: "/repo", summary: "Code.", branches: [] };
+    },
+    async ask() {
+      return "";
+    },
+    async change(state: { branches: unknown[]; currentBranch?: string }) {
+      calls.push("change");
+      branch.commits.push({ sha: "28b8332", message: "Make replies structured", by: "Wilson", at: "" });
+      state.branches.push(branch);
+      state.currentBranch = branch.name;
+      return { changed: true, branch, commit: branch.commits[0], stat: "4 files changed", report: "Done.", pushed: false };
+    },
+    async publish(_s: unknown, b: typeof branch) {
+      calls.push(`publish ${b.name}`);
+      b.prUrl = "https://github.com/Wilozz/HackHarvard2026/pull/10";
+      return { changed: true, branch: b, commit: b.commits.at(-1), stat: "4 files changed", report: "Pushed the 1 commit already made on this branch.", pushed: true };
+    },
+    async rollback(): Promise<never> {
+      throw new Error("unused");
+    },
+  };
+  const plans: Record<string, Awaited<ReturnType<typeof import("../src/orbit/repoPlan").writeRepoPlan>>> = {
+    "make your replies structured": { action: "change", title: "Structured replies", brief: "Make replies structured.", rollbackMode: "none", rollbackCommit: "", branch: "" },
+    "push it": { action: "push", title: "", brief: "", rollbackMode: "none", rollbackCommit: "", branch: "" },
+  };
+  const { api, agent, step, texts } = setup({ repos: repos as never, repoPlan: (r) => plans[r]! });
+  await agent.start();
+  api.add(WILSON, "@Orbit work on Wilozz/HackHarvard2026");
+  await step();
+  api.add(WILSON, "@Orbit make your replies structured");
+  await step();
+  api.add(WILSON, "ship it");
+  await step();
+  assert.match(texts().at(-1)!, /Not pushed: there's no GITHUB_TOKEN/);
+
+  // Token fixed: "push it" publishes the same commits right away (no ship it, no Claude Code run).
+  api.add(WILSON, "@Orbit push it");
+  await step();
+  assert.deepEqual(calls, ["change", "publish ensemble-structured-replies-x1"]);
+  assert.match(texts().at(-1)!, /Pull request: https:\/\/github\.com\/Wilozz\/HackHarvard2026\/pull\/10/);
+});
+
+test("merge: only after ship it, and never a pull request GitHub says can't merge cleanly", async () => {
+  const calls: string[] = [];
+  let state = "clean";
+  const branch = { name: "ensemble-structured-replies-x1", title: "Structured replies", base: "main", createdBy: "Wilson", commits: [{ sha: "28b8332", message: "Make replies structured", by: "Wilson", at: "" }], prUrl: "https://github.com/Wilozz/HackHarvard2026/pull/10", prNumber: 10, merged: undefined as undefined | { sha: string; by: string; at: string } };
+  const pr = { number: 10, url: branch.prUrl, title: "Structured replies", state: "open", merged: false, mergeableState: "clean", head: branch.name, base: "main", changedFiles: 4 };
+  const repos = {
+    async attach(ref: { owner: string; name: string; url: string }) {
+      return { ...ref, defaultBranch: "main", canPush: true, sandboxId: "sbx", dir: "/repo", summary: "Code.", branches: [branch], currentBranch: branch.name };
+    },
+    async ask() {
+      return "";
+    },
+    async change(): Promise<never> {
+      throw new Error("unused");
+    },
+    async publish(): Promise<never> {
+      throw new Error("unused");
+    },
+    async rollback(): Promise<never> {
+      throw new Error("unused");
+    },
+    async mergeCheck() {
+      return state === "dirty" ? { problem: "PR #10 has merge conflicts with main. Someone needs to resolve them on GitHub first.", pr } : { pr };
+    },
+    async merge(_s: unknown, b: typeof branch, by: string) {
+      calls.push(`merge ${b.name} by ${by}`);
+      b.merged = { sha: "f00ba12", by, at: "" };
+      return { pr, sha: "f00ba12" };
+    },
+  };
+  const plan = { action: "merge" as const, title: "", brief: "", rollbackMode: "none" as const, rollbackCommit: "", branch: "" };
+  const { api, agent, step, texts } = setup({ repos: repos as never, repoPlan: () => plan });
+  await agent.start();
+  api.add(WILSON, "@Orbit work on Wilozz/HackHarvard2026");
+  await step();
+
+  state = "dirty";
+  api.add(WILSON, "@Orbit merge it");
+  await step();
+  assert.equal(texts().at(-1), "PR #10 has merge conflicts with main. Someone needs to resolve them on GitHub first.");
+  api.add(WILSON, "ship it");
+  await step();
+  assert.deepEqual(calls, [], "nothing to approve after a refusal");
+
+  state = "clean";
+  api.add(WILSON, "@Orbit merge it");
+  await step();
+  assert.match(texts().at(-1)!, /^I'll squash-merge PR #10 "Structured replies" \(4 files\) into main and delete its branch: https:\/\/github\.com\/Wilozz\/HackHarvard2026\/pull\/10\n\nReply "ship it" to merge\.$/);
+  api.add(STRANGER, "ship it");
+  await step();
+  assert.deepEqual(calls, [], "a stranger can't approve a merge");
+  api.add(HARSH, "ship it");
+  await step();
+  assert.deepEqual(calls, ["merge ensemble-structured-replies-x1 by Wilson"], "recorded as asked for by Wilson");
+  assert.equal(texts().at(-1), 'Merged PR #10 "Structured replies" into main (commit f00ba12) and deleted the branch.');
+});
+
+test("with a repo open, app requests are handed off to the app builder, and 'no repo' turns repo mode off", async () => {
+  const calls: string[] = [];
+  const repos = {
+    async attach(ref: { owner: string; name: string; url: string }) {
+      return { ...ref, defaultBranch: "main", canPush: true, sandboxId: "sbx", dir: "/repo", summary: "Ensemble's code.", branches: [] };
+    },
+    async ask() {
+      return "";
+    },
+    async change(_s: unknown, args: { brief: string }): Promise<never> {
+      calls.push(`change ${args.brief}`);
+      throw new Error("the repo must not be changed for an app request");
+    },
+    async publish(): Promise<never> {
+      throw new Error("unused");
+    },
+    async rollback(): Promise<never> {
+      throw new Error("unused");
+    },
+    async mergeCheck(): Promise<never> {
+      throw new Error("unused");
+    },
+    async merge(): Promise<never> {
+      throw new Error("unused");
+    },
+  };
+  const plan = (request: string) => {
+    calls.push(`plan ${request}`);
+    const app = /snake|game/i.test(request);
+    return {
+      action: app ? ("app" as const) : ("change" as const),
+      title: app ? "" : "Dark mode",
+      brief: app ? "" : "Add dark mode.",
+      rollbackMode: "none" as const,
+      rollbackCommit: "",
+      branch: "",
+    };
+  };
+  const { api, agent, store, generated, step, texts } = setup({ repos: repos as never, repoPlan: plan });
+  await agent.start();
+  api.add(WILSON, "@Orbit work on Wilozz/HackHarvard2026");
+  await step();
+
+  // An app request while the repo is open: handed off, built as an app, repo untouched.
+  api.add(WILSON, "@Orbit make a new snake game");
+  await step();
+  assert.match(texts().at(-1)!, /^Here's the plan for Neon Snake \(v1\)/);
+  api.add(WILSON, "ship it");
+  await step();
+  assert.match(texts().at(-1)!, /^v1 of Neon Snake is live/);
+  assert.equal(generated.length, 1);
+  assert.ok(!calls.some((c) => c.startsWith("change")), "the repo was never changed");
+  assert.ok(store.chat("imessage:pho_spc_group").repo, "the repo is still open for repo work");
+
+  // Repo work still goes to the repo.
+  api.add(WILSON, "@Orbit add dark mode to the site");
+  await step();
+  assert.match(texts().at(-1)!, /^Here's the plan for Wilozz\/HackHarvard2026:\n\nAdd dark mode\./);
+  api.add(WILSON, "@Orbit cancel");
+  await step();
+
+  // Saying not to use a repo turns repo mode off; the rest of the message is handled as an app request.
+  api.add(WILSON, "@Orbit don't use a repo, make the snake faster");
+  await step();
+  assert.equal(store.chat("imessage:pho_spc_group").repo, undefined);
+  assert.match(texts().at(-2)!, /^On it: v2 of Neon Snake\. Change: make the snake faster/);
+  assert.ok(!calls.includes("plan don't use a repo, make the snake faster"), "the repo planner wasn't even asked");
 });

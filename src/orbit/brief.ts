@@ -54,7 +54,7 @@ export async function writeBrief(args: {
     args.request || "(just your name)",
     "</request>",
   ].join("\n");
-  const brief = await structured({ system: SYSTEM, user, schema: briefSchema, effort: "low", images: args.images });
+  const brief = await structured({ system: SYSTEM, user, schema: briefSchema, effort: "low", images: args.images, model: config.ORBIT_BRIEF_MODEL });
   // An edit needs a real app to edit: the one it named, else the current one, else it's a new build.
   if (brief.action === "edit") {
     const target = apps.find((a) => a.id === brief.projectId) ?? apps.find((a) => a.current);

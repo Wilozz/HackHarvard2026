@@ -90,7 +90,7 @@ export class OrbitService {
     private readonly groups: GroupRegistry,
     steps: Partial<OrbitSteps> = {},
     /** Repo mode (clone, change, PR, rollback). Needs Daytona; off without it. */
-    private readonly repos?: Pick<RepoWorker, "attach" | "ask" | "change" | "rollback">,
+    private readonly repos?: Pick<RepoWorker, "attach" | "ask" | "change" | "rollback" | "publish" | "mergeCheck" | "merge">,
   ) {
     this.steps = { writeBrief, writeSpec, writeRepoPlan, generateApp, checkApp, ...steps };
   }
@@ -134,7 +134,7 @@ export class OrbitService {
       case "versions": {
         if (chat.repo) {
           const r = chat.repo;
-          const branches = r.branches.map((b) => `${b.title}: ${b.name}${b.prUrl ? ` ${b.prUrl}` : ""} (${b.commits.length} commit${b.commits.length === 1 ? "" : "s"})`);
+          const branches = r.branches.map((b) => `${b.title}: ${b.name}${b.prUrl ? ` ${b.prUrl}` : ""} (${b.commits.length} commit${b.commits.length === 1 ? "" : "s"}${b.merged ? ", merged" : ""})`);
           await turn.say(branches.length > 0 ? `${r.owner}/${r.name}\n${branches.join("\n")}` : `No branches on ${r.owner}/${r.name} yet. Ask me for a change.`, "versions");
           return;
         }
@@ -183,10 +183,22 @@ export class OrbitService {
           await this.attachRepo(chat, ref, turn);
           return;
         }
-        if (chat.repo && this.repos) {
-          await this.repoRequest(chat, cmd.text, turn);
-          return;
+        // "don't use a repo" / "no repo" / "leave the repo": back to apps, and build whatever else they asked for.
+        let request = cmd.text;
+        if (wantsNoRepo(request)) {
+          request = stripNoRepo(request);
+          if (chat.repo) {
+            const name = `${chat.repo.owner}/${chat.repo.name}`;
+            delete chat.repo;
+            delete chat.pendingRepo;
+            this.store.save();
+            if (!request) {
+              await turn.say(`Okay, I've stopped working on ${name}. Back to building apps.`, "no-repo");
+              return;
+            }
+          }
         }
+        if (chat.repo && this.repos && (await this.repoRequest(chat, request, turn))) return;
         // Only what's being talked about now (since the last link went out), plus a one-line list of every app,
         // so an old app's discussion is never re-read and "go back to the cat game" still finds the right one.
         const open = openRange(chat);
@@ -200,7 +212,7 @@ export class OrbitService {
         const brief = await this.steps.writeBrief({
           transcript: await turn.context([open]),
           askedBy: turn.askedBy,
-          request: cmd.text,
+          request,
           apps,
           images: photos.map((p) => ({ label: `Photo sent by ${p.sentBy}:`, data: p.data })),
         });
@@ -330,10 +342,18 @@ export class OrbitService {
   }
 
   /** Repo mode: work out what the message wants, then answer, or post a plan that waits for "ship it". */
-  private async repoRequest(chat: OrbitChat, text: string, turn: OrbitTurn): Promise<void> {
+  /** Returns false when the message is really about an app, so the app flow handles it instead. */
+  private async repoRequest(chat: OrbitChat, text: string, turn: OrbitTurn): Promise<boolean> {
     const repo = chat.repo!;
     const worker = this.repos!;
-    const plan = await this.steps.writeRepoPlan({ repo, transcript: await turn.context([openRange(chat)]), askedBy: turn.askedBy, request: text });
+    const plan = await this.steps.writeRepoPlan({
+      repo,
+      transcript: await turn.context([openRange(chat)]),
+      askedBy: turn.askedBy,
+      request: text,
+      apps: chat.projects.filter((p) => latestLive(p)).map((p) => p.title),
+    });
+    if (plan.action === "app") return false;
     const branch = plan.branch ? repo.branches.find((b) => b.name === plan.branch) : repo.branches.find((b) => b.name === repo.currentBranch);
 
     if (plan.action === "leave") {
@@ -341,11 +361,42 @@ export class OrbitService {
       delete chat.pendingRepo;
       this.store.save();
       await turn.say(`Done with ${repo.owner}/${repo.name}. Back to building apps.`, "leave");
-      return;
+      return true;
     }
     if (plan.action === "question") {
       this.startJob(chat, "a question about the code", turn, "answer", () => worker.ask(repo, plan.brief || text));
-      return;
+      return true;
+    }
+    if (plan.action === "merge") {
+      const target =
+        (plan.branch ? repo.branches.find((b) => b.name === plan.branch) : undefined) ??
+        (branch && branch.prNumber && !branch.merged ? branch : undefined) ??
+        [...repo.branches].reverse().find((b) => b.prNumber && !b.merged);
+      if (!target) {
+        await turn.say("There's no open pull request of mine to merge.", "merge-nothing");
+        return true;
+      }
+      const { problem, pr } = await worker.mergeCheck(repo, target);
+      if (problem || !pr) {
+        await turn.say(problem ?? "I couldn't read that pull request.", "merge-blocked");
+        return true;
+      }
+      chat.pendingRepo = { action: "merge", title: target.title, brief: "", requestedBy: turn.askedBy, at: new Date().toISOString(), branch: target.name };
+      this.store.save();
+      await turn.say(
+        `I'll squash-merge PR #${pr.number} "${pr.title}" (${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}) into ${pr.base} and delete its branch: ${pr.url}\n\nReply "ship it" to merge.`,
+        "merge-plan",
+      );
+      return true;
+    }
+    if (plan.action === "push") {
+      if (!branch || branch.commits.length === 0) {
+        await turn.say("There's nothing committed to push yet. Ask me for a change first.", "push-nothing");
+        return true;
+      }
+      // Publishing committed work changes no code, so it doesn't wait for "ship it".
+      this.startRepoTask(chat, { action: "push", title: branch.title, brief: "", requestedBy: turn.askedBy, at: new Date().toISOString(), branch: branch.name }, turn);
+      return true;
     }
     const pending: PendingRepoTask = {
       action: plan.action === "update" && !branch ? "change" : plan.action,
@@ -371,6 +422,7 @@ export class OrbitService {
       message = `Here's the plan for ${repo.owner}/${repo.name}:\n\n${pending.brief}\n\nI'll do it on ${where}${repo.canPush ? " and open a pull request" : ""}. Reply "ship it" to start.`;
     }
     await turn.say(message, "repo-plan");
+    return true;
   }
 
   /** Run a confirmed repo change, follow-up or rollback in the background and post the result. */
@@ -380,17 +432,25 @@ export class OrbitService {
     delete chat.pendingRepo;
     const branch = task.branch ? repo.branches.find((b) => b.name === task.branch) : undefined;
     this.startJob(chat, task.title, turn, `repo:${task.at}`, async () => {
+      if (task.action === "merge") {
+        if (!branch) throw new Error("that branch is gone");
+        const { pr, sha } = await worker.merge(repo, branch, task.requestedBy);
+        this.store.save();
+        return `Merged PR #${pr.number} "${pr.title}" into ${pr.base} (commit ${sha}) and deleted the branch.`;
+      }
       const result: ChangeResult =
         task.action === "rollback"
           ? await worker.rollback(repo, { mode: task.rollbackMode ?? "undo", commit: task.rollbackCommit, title: task.title, requestedBy: task.requestedBy, branch })
-          : await worker.change(repo, { brief: task.brief, title: task.title, requestedBy: task.requestedBy, branch });
+          : task.action === "push" && branch
+            ? await worker.publish(repo, branch)
+            : await worker.change(repo, { brief: task.brief, title: task.title, requestedBy: task.requestedBy, branch });
       this.store.save();
       log.info("repo_task_finished", { chatId: chat.chatId, action: task.action, changed: result.changed, pushed: result.pushed });
       if (!result.changed) return `I didn't end up changing anything. ${result.report}`;
       const c = result.commit!;
       const pr = result.pushed
         ? `Pull request: ${result.branch.prUrl}`
-        : "Not pushed: add a GITHUB_TOKEN that can push to this repo and I'll push the branch and open a pull request.";
+        : "Not pushed: there's no GITHUB_TOKEN that can push to this repo. Add one to .env (no restart needed) and say \"@" + config.AGENT_NAME + " push it\".";
       return `Done on ${result.branch.name}: ${result.stat} (commit ${c.sha}, "${c.message}").\n\n${result.report}\n\n${pr}`;
     });
     void turn.say(`On it: ${task.title}. I'll post here when it's done.`, `repo-start:${task.at}`);
@@ -510,6 +570,25 @@ export class OrbitService {
 }
 
 const EPOCH = new Date(0).toISOString();
+
+const NO_REPO =
+  /\b(?:don'?t|do not|no|without|not|stop|quit|leave|exit|drop|close|forget(?: about)?)\b(?:\s+(?:use|using|work(?:ing)? (?:in|on)|in|on|with|the|a|any|this|that|our))*\s+repo(?:s|sitory|sitories)?\b(?:\s+mode)?(?:\s+(?:for|on) (?:this|that|it))?/i;
+
+/** "don't use a repo", "no repo", "leave the repo", "stop using the repository"… */
+export function wantsNoRepo(text: string): boolean {
+  return NO_REPO.test(text.replace(/[‘’]/g, "'"));
+}
+
+/** The request left after removing the "no repo" part ("" if that was all they said). */
+export function stripNoRepo(text: string): string {
+  return text
+    .replace(/[‘’]/g, "'")
+    .replace(NO_REPO, " ")
+    .replace(/^[\s,.;:!-]+|[\s,.;:!-]+$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^(?:and|but|just|please|so)\b\s*/i, "")
+    .trim();
+}
 
 /** What's being talked about now: from the start of the latest segment (the whole chat before the first app). */
 export function openRange(chat: OrbitChat): ChatRange {
